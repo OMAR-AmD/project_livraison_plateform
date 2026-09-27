@@ -14,7 +14,11 @@ backend/*.jar
 backend/pom.xml.bak
 
 # Maven Wrapper
-backend/.mvn/
+# The wrapper MUST be committed. Without backend/.mvn/wrapper/maven-wrapper.properties
+# a fresh clone has no ./mvnw and the documented build command cannot run.
+# Only the legacy wrapper jar is ignored; this project uses the 3.2+ style
+# wrapper, which reads distributionUrl and downloads Maven itself.
+backend/.mvn/wrapper/maven-wrapper.jar
 
 # Java
 backend/*.class
@@ -256,7 +260,6 @@ venv/
 
 # Build configuration files
 !backend/pom.xml
-!backend/.mvn/wrapper/maven-wrapper.jar
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/next.config.mjs
