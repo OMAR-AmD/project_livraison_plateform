@@ -1,0 +1,30 @@
+# Normalise line endings so the repository behaves the same on Windows, macOS
+# and Linux, and so that a file does not show up as modified purely because
+# someone checked it out on a different operating system.
+* text=auto eol=lf
+
+# Windows launchers are executed by cmd.exe, which expects CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+mvnw.cmd text eol=crlf
+
+# mvnw is a POSIX shell script and is executed by ./mvnw on the Linux CI
+# runner. It MUST stay LF in the working tree, otherwise the runner fails with
+# "bad interpreter: /bin/sh^M" before Maven is ever reached.
+mvnw text eol=lf
+*.sh text eol=lf
+
+# Binary assets that must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.pbf binary
+*.osrm binary
+
+# Local overrides and secrets are handled by .gitignore, which supports negated
+# patterns; .gitattributes does not.

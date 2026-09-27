@@ -1,0 +1,280 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * SwiftDeliver — global stylesheet.
+ *
+ * Structure:
+ *   1. Base resets and typography
+ *   2. Focus handling (a single visible ring everywhere)
+ *   3. Component layer — the only place components should get their styling
+ *   4. Utilities
+ *
+ * Fonts are self-hosted via next/font/local in app/layout.js. There is
+ * deliberately no @import of a remote font stylesheet: the platform is meant to
+ * run without depending on any third-party service at runtime.
+ */
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-canvas text-content font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* One consistent focus treatment instead of relying on browser defaults. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-signal-500/70 ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-signal-500/30 text-content;
+  }
+
+  /* Inputs inherit the type system rather than the UA default. */
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Remove the number-input spinners; they are noise in a dashboard. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* ── Surfaces ─────────────────────────────────────────────────────── */
+  .surface {
+    @apply bg-surface border border-line rounded-lg shadow-card;
+  }
+
+  .surface-raised {
+    @apply bg-surface-raised border border-line rounded-lg shadow-raised;
+  }
+
+  .surface-sunken {
+    @apply bg-surface-sunken border border-line rounded-lg;
+  }
+
+  .surface-interactive {
+    @apply bg-surface border border-line rounded-lg shadow-card transition-colors hover:bg-surface-hover hover:border-line-strong cursor-pointer;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-md transition-colors disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap;
+  }
+
+  .btn-primary {
+    @apply btn bg-signal-500 text-white hover:bg-signal-600 active:bg-signal-700;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface-raised text-content-soft border border-line hover:bg-surface-hover hover:text-content hover:border-line-strong;
+  }
+
+  .btn-ghost {
+    @apply btn text-content-muted hover:text-content hover:bg-surface-hover;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger-500/10 text-danger-400 border border-danger-500/25 hover:bg-danger-500/20 hover:text-danger-300;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* ── Form controls ────────────────────────────────────────────────── */
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wider text-content-faint mb-2;
+  }
+
+  .input {
+    @apply w-full px-3.5 py-2.5 bg-surface-sunken border border-line rounded-md text-content placeholder:text-content-faint text-sm transition-colors hover:border-line-strong focus:border-signal-500 focus:outline-none focus:ring-1 focus:ring-signal-500/50;
+  }
+
+  select.input {
+    /* Native select arrows render inconsistently on a dark background. */
+    @apply appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' class='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='%23868D97' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5'/%3E%3C/svg%3E");
+    background-position: right 0.75rem center;
+  }
+
+  /* ── Status pills ─────────────────────────────────────────────────────
+     One state, one colour, everywhere. A delivery in motion uses the accent
+     because that is the one state the operator is watching.               */
+  .status {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border;
+  }
+
+  .status-pending {
+    @apply status bg-ink-800 text-content-muted border-line-strong;
+  }
+
+  .status-assigned {
+    @apply status bg-info-500/10 text-info-400 border-info-500/25;
+  }
+
+  .status-in-transit {
+    @apply status bg-signal-500/10 text-signal-400 border-signal-500/25;
+  }
+
+  .status-delivered {
+    @apply status bg-ok-500/10 text-ok-400 border-ok-500/25;
+  }
+
+  .status-cancelled {
+    @apply status bg-danger-500/10 text-danger-400 border-danger-500/25;
+  }
+
+  /* A pulsing dot marks the live state so it reads at a glance. */
+  .status-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-current;
+  }
+
+  /* ── Role badges ──────────────────────────────────────────────────── */
+  .role-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border;
+  }
+
+  .badge-client {
+    @apply role-badge bg-ink-800 text-content-soft border-line-strong;
+  }
+
+  .badge-livreur {
+    @apply role-badge bg-ok-500/10 text-ok-400 border-ok-500/25;
+  }
+
+  .badge-admin {
+    @apply role-badge bg-violet-500/10 text-violet-400 border-violet-500/25;
+  }
+
+  /* ── Data display ─────────────────────────────────────────────────────
+     Figures use tabular numerals so columns of numbers align and do not
+     jitter as values update in real time.                                */
+  .stat-value {
+    @apply text-3xl font-bold text-content tracking-tight tabular-nums;
+  }
+
+  .stat-label {
+    @apply text-xs font-semibold uppercase tracking-wider text-content-faint mt-1;
+  }
+
+  .stat-meta {
+    @apply text-xs text-content-muted mt-2;
+  }
+
+  .table-head {
+    @apply px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-content-faint bg-surface-sunken;
+  }
+
+  .table-cell {
+    @apply px-4 py-3.5 text-sm text-content-soft;
+  }
+
+  /* ── Structure ────────────────────────────────────────────────────── */
+  .page-title {
+    @apply text-2xl font-bold text-content tracking-tight;
+  }
+
+  .section-title {
+    @apply text-sm font-bold uppercase tracking-wider text-content-faint;
+  }
+
+  .divider {
+    @apply border-t border-line;
+  }
+
+  .link {
+    @apply text-signal-400 hover:text-signal-300 font-medium transition-colors;
+  }
+}
+
+@layer utilities {
+  /* Applied to any element showing a number that changes while you watch it. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Scrollbars, tuned to the neutral ramp rather than the browser default. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0f1114;
+}
+::-webkit-scrollbar-thumb {
+  background: #262a31;
+  border-radius: 6px;
+  border: 2px solid #0f1114;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #383e46;
+}
+
+/*
+ * Map tiles.
+ *
+ * The only basemap available without a registered API key is the standard
+ * OpenStreetMap raster, which is light and clashes badly with this theme.
+ * Inverting and re-hue-rotating the tile pane turns it into a dark map without
+ * introducing a keyed or metered third-party service — which matters here,
+ * because a "dark basemap" CDN would quietly reintroduce exactly the external
+ * dependency the platform is built to avoid. (CARTO's dark_all endpoint now
+ * returns a "REQUIRED mapbox.apikey" error tile without a key.)
+ *
+ * Markers and polylines live in other panes and are left untouched, so the
+ * accent colour stays accurate.
+ */
+.leaflet-container {
+  background: #0f1114;
+  font: inherit;
+}
+
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.86) saturate(0.6);
+}
+
+/* Leaflet's default zoom control is a light chip; match it to the theme. */
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  background: #171a1f;
+  color: #c3c9d1;
+  border-bottom-color: #242830;
+}
+
+.leaflet-bar a:hover {
+  background: #1e222a;
+  color: #f2f4f6;
+}
+
+.leaflet-control-attribution {
+  background: rgba(12, 14, 17, 0.75) !important;
+  color: #5c636d !important;
+  font-size: 10px;
+}
+
+.leaflet-control-attribution a {
+  color: #868d97 !important;
+}

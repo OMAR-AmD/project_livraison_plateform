@@ -1,0 +1,49 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/${DB_NAME:delivery_db}
+    username: ${DB_USERNAME:admin}
+    password: ${DB_PASSWORD:password123}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  ai:
+    ollama:
+      chat:
+        model: llama3.2:1b
+        options:
+          temperature: 0.2
+      embedding:
+        model: nomic-embed-text
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
+
+application:
+  osrm:
+    # Self-hosted routing engine (see docker-compose.yml). Used for pricing quotes
+    # and for the auto-dispatcher's travel-time matrix.
+    base-url: ${OSRM_BASE_URL:http://localhost:5000}
+  security:
+    jwt:
+      # Must be supplied in any real deployment. There is deliberately no
+      # fallback value here: shipping a well-known signing key would let anyone
+      # who has read this repository mint a valid token for any user, including
+      # administrators. Use at least 32 random bytes.
+      #
+      # For local development:  export JWT_SECRET_KEY=$(openssl rand -hex 32)
+      secret-key: ${JWT_SECRET_KEY}
+      expiration: ${JWT_EXPIRATION:86400000}

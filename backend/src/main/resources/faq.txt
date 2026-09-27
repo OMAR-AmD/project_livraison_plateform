@@ -1,0 +1,8 @@
+FAQ SwiftDeliver:
+- Delay policy: If your parcel is more than 10 minutes late, you are entitled to a 10% automatic refund. If the delay exceeds 45 minutes, the delivery is refunded in full.
+- Cold chain: Orders containing fresh products are transported in insulated bags maintaining a temperature of 4 degrees Celsius.
+- Damaged items: If a product arrives damaged, take a photo and send it to support within 24 hours for a full refund.
+- Payment: Online payments are secure. We do not accept cash on delivery.
+- Coverage area: We currently deliver across the whole of Casablanca.
+- Pricing: The price quoted at checkout is calculated by the server from the real road route between the pickup and the drop-off, not from a straight-line estimate. An order is only charged once payment has been captured.
+- Order cancellation: An order can be cancelled free of charge while it is still pending. Once a courier has been assigned and the parcel is in transit, cancellation is no longer possible.
