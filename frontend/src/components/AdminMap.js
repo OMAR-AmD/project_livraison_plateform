@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Tooltip, useMap, Polyline } from 'react-leaflet';
+import { MapContainer, Marker, Tooltip, useMap, Polyline } from 'react-leaflet';
+import BasemapLayer from './BasemapLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 // import { Client } from '@stomp/stompjs';
@@ -146,10 +147,7 @@ export default function AdminMap({ deliveries }) {
   return (
     <div style={{ height: '600px', width: '100%' }} className="rounded-xl overflow-hidden border border-line mb-6">
       <MapContainer center={[33.5731, -7.5898]} zoom={12} style={{ height: '100%', width: '100%' }}>
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BasemapLayer />
         
         <GlobalMapBounds deliveries={deliveries.filter(d => d.status === 'IN_TRANSIT' || d.status === 'ASSIGNED')} />
 

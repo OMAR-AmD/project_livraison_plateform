@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, useMapEvents } from 'react-leaflet';
+import BasemapLayer from './BasemapLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -51,9 +52,7 @@ export default function LocationPickerMap({ lat, lng, onChange }) {
         ref={setMap}
         attributionControl={false}
       >
-        <TileLayer
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BasemapLayer />
         <MapEvents onMapClick={(latlng) => onChange(latlng.lat, latlng.lng)} />
         {lat && lng && (
           <Marker 

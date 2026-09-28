@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, Tooltip } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, useMap, Tooltip } from 'react-leaflet';
+import BasemapLayer from './BasemapLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -81,10 +82,7 @@ export default function OptimizedRouteMap({ orderedWaypoints, courierPos }) {
   return (
     <div style={{ height: '500px', width: '100%' }}>
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}>
-        <TileLayer
-          attribution='&copy; <a href="https://openstreetmap.org/">OpenStreetMap</a>'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BasemapLayer />
         
         {orderedWaypoints && orderedWaypoints.length > 0 && (
           <MapBounds waypoints={orderedWaypoints} courierPos={courierPos} />

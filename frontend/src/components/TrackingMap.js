@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, Tooltip } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, useMap, Tooltip } from 'react-leaflet';
+import BasemapLayer from './BasemapLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -85,10 +86,7 @@ export default function TrackingMap({ pickupLat, pickupLng, dropoffLat, dropoffL
   return (
     <div style={{ height: '400px', width: '100%' }}>
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}>
-        <TileLayer
-          attribution='&copy; <a href="https://openstreetmap.org/">OpenStreetMap</a>'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BasemapLayer />
         
         {points.length > 1 && <MapBounds points={points} />}
 

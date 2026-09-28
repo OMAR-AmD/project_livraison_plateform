@@ -70,6 +70,27 @@ is light. Rather than introduce a keyed (and metered) tile provider, the tile pa
 is inverted and hue-rotated via CSS in `globals.css`, leaving markers and polylines
 untouched so the accent colour stays accurate.
 
+OpenStreetMap's tile server is a free public service whose usage policy
+discourages exactly this kind of application use, so it throttles under load and
+can return nothing at all. When that happens the map no longer fails silently:
+every map shares one `BasemapLayer` component that
+
+- substitutes a local fallback tile, so a broken basemap looks broken rather than
+  like an empty grey rectangle with markers floating on it,
+- shows a notice explaining that positions and routes are still accurate, with a
+  working **Retry** button, and
+- retries on a backoff so a throttled server is not hammered.
+
+Point `NEXT_PUBLIC_TILE_URL` at your own tile server to remove the dependency
+entirely — for example `/tiles/{z}/{x}/{y}.png` proxied to a container serving
+tiles generated from the same OpenStreetMap extract that `scripts/prepare-osrm.sh`
+already downloads. The template accepts the standard `{z}/{x}/{y}` placeholders,
+so no code change is needed.
+
+`frontend/verify_basemap.js` asserts this behaviour by blocking every tile request
+and checking that the user is told and that Retry works. It exits non-zero if the
+warning ever stops appearing, so the regression cannot come back quietly.
+
 
 ---
 

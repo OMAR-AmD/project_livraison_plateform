@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!--
+    Fallback tile shown by Leaflet when a basemap tile cannot be fetched.
+
+    The tile pane is inverted by CSS to produce the dark basemap, so this is
+    drawn light-on-mid-grey: after inversion it reads as a subtle dark grid
+    instead of an empty rectangle. The point is that the user can tell the map
+    failed, rather than seeing a blank void with markers floating on it.
+  -->
+  <rect width="256" height="256" fill="#E4E7EB"/>
+  <g stroke="#C3CAD3" stroke-width="1" fill="none">
+    <path d="M0 64h256M0 128h256M0 192h256M64 0v256M128 0v256M192 0v256"/>
+  </g>
+  <g fill="#D2D8DF">
+    <rect x="16" y="16" width="48" height="48" rx="3"/>
+    <rect x="144" y="80" width="80" height="48" rx="3"/>
+    <rect x="32" y="176" width="64" height="56" rx="3"/>
+  </g>
+  <g stroke="#B4BCC6" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M12 148 L76 148 L104 120 L188 120 L236 92"/>
+  </g>
+</svg>
