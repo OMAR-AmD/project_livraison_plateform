@@ -55,6 +55,22 @@ jobs:
       - name: Provide a signing key for the build
         run: echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> $GITHUB_ENV
 
+      # docker-compose.yml mounts init.sql into the database container, which
+      # is how a local run gets pgvector. A service container has no such mount,
+      # so without this step the extension is absent and the AI subsystem is
+      # skipped rather than tested. Enable it so the real configuration is
+      # exercised, and so a regression in the vector store fails the build
+      # instead of passing quietly.
+      - name: Enable the pgvector extension
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD=password123 \
+            pgvector/pgvector:pg15 \
+            psql -h 127.0.0.1 -U admin -d delivery_db \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+            -c "SELECT extname, extversion FROM pg_extension WHERE extname='vector';"
+
       - name: Package (compiles and runs the tests)
         run: ./mvnw -B package
 

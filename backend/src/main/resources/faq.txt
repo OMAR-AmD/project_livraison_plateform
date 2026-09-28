@@ -4,5 +4,5 @@ FAQ SwiftDeliver:
 - Damaged items: If a product arrives damaged, take a photo and send it to support within 24 hours for a full refund.
 - Payment: Online payments are secure. We do not accept cash on delivery.
 - Coverage area: We currently deliver across the whole of Casablanca.
-- Pricing: The price quoted at checkout is calculated by the server from the real road route between the pickup and the drop-off, not from a straight-line estimate. An order is only charged once payment has been captured.
+- Pricing: The price quoted at checkout is calculated by the server from the real road route between the pickup and the drop-off, not from a straight-line estimate. The fare is 15 MAD base plus 5 MAD per kilometre of road distance, so a short trip costs the 15 MAD minimum. The amount is always computed on the server; the figure shown in the browser cannot be changed by the client. An order is only charged once payment has been captured, and a courier is only assigned after that, so an unpaid order never occupies a courier's capacity.
 - Order cancellation: An order can be cancelled free of charge while it is still pending. Once a courier has been assigned and the parcel is in transit, cancellation is no longer possible.

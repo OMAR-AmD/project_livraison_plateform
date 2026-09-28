@@ -27,7 +27,13 @@ spring:
         model: nomic-embed-text
     vectorstore:
       pgvector:
-        initialize-schema: true
+        # Deliberately false. With this on, Spring AI creates the vector table
+        # while the context is starting, and if the pgvector extension is
+        # missing the whole application fails to boot - a delivery platform
+        # taken down by an optional AI dependency. ChatService creates the
+        # table itself inside its startup routine, which already treats failure
+        # as "the assistant is unavailable" and lets the platform still run.
+        initialize-schema: false
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         dimensions: 768

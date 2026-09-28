@@ -14,6 +14,7 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -51,6 +52,7 @@ public class ChatService {
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
     private final DeliveryService deliveryService;
+    private final JdbcTemplate jdbcTemplate;
 
     /** False when the FAQ could not be embedded because Ollama was unreachable. */
     private volatile boolean retrievalReady = false;
@@ -58,10 +60,66 @@ public class ChatService {
     @Value("classpath:faq.txt")
     private Resource faqResource;
 
-    public ChatService(ChatClient.Builder chatClientBuilder, VectorStore vectorStore, DeliveryService deliveryService) {
+    @Value("${spring.ai.vectorstore.pgvector.table-name:vector_store}")
+    private String tableName;
+
+    @Value("${spring.ai.vectorstore.pgvector.dimensions:768}")
+    private int dimensions;
+
+    public ChatService(ChatClient.Builder chatClientBuilder,
+                       VectorStore vectorStore,
+                       DeliveryService deliveryService,
+                       JdbcTemplate jdbcTemplate) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.deliveryService = deliveryService;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * Creates the retrieval table if it is absent, and replaces it if an older,
+     * incompatible one is in the way.
+     *
+     * <p>Spring AI can do this itself via {@code initialize-schema}, but it does
+     * so while the application context is starting, where a failure is fatal.
+     * The pgvector extension has to be installed by a superuser, which a real
+     * deployment's application user frequently is not, so this is a realistic
+     * failure rather than a theoretical one. Doing it here means a missing
+     * extension disables the assistant instead of preventing the platform from
+     * starting at all.
+     *
+     * <p>{@code CREATE TABLE IF NOT EXISTS} is not enough on its own: an earlier
+     * build of this project left a {@code vector_store} table holding
+     * {@code metadata json} and no {@code embedding} column at all, which the
+     * {@code IF NOT EXISTS} check happily skips and every later query then fails
+     * on. The table is a derived cache of faq.txt that is rebuilt on every
+     * start, so discarding an incompatible one costs nothing.
+     */
+    private void ensureSchema() {
+        Boolean tableExists = jdbcTemplate.queryForObject("""
+                SELECT to_regclass(?) IS NOT NULL
+                """, Boolean.class, tableName);
+
+        if (Boolean.TRUE.equals(tableExists)) {
+            Integer columns = jdbcTemplate.queryForObject("""
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_name = ? AND column_name = 'embedding'
+                    """, Integer.class, tableName);
+
+            if (columns != null && columns == 0) {
+                log.warn("Table {} exists but has no embedding column; recreating it", tableName);
+                jdbcTemplate.execute("DROP TABLE IF EXISTS " + tableName);
+            }
+        }
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS %s (
+                    id uuid PRIMARY KEY,
+                    content text,
+                    metadata jsonb,
+                    embedding vector(%d)
+                )
+                """.formatted(tableName, dimensions));
     }
 
     /**
@@ -76,6 +134,10 @@ public class ChatService {
     @PostConstruct
     public void initVectorStore() {
         try {
+            // Must happen before any query. If the pgvector extension is
+            // missing this throws and the catch below disables the assistant.
+            ensureSchema();
+
             // topK is deliberately oversized: a low value would clear only part of
             // the store, leaving stale chunks to be retrieved with the new ones.
             SearchRequest request = SearchRequest.query("delivery policy refund payment")
