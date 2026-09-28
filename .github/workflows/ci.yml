@@ -40,6 +40,13 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+    defaults:
+      run:
+        # The Maven project lives in backend/. Without this, ./mvnw is resolved
+        # against the repository root, where it does not exist, and the build
+        # fails instantly with "No such file or directory" instead of building.
+        working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,11 +56,35 @@ jobs:
           java-version: '17'
           distribution: temurin
           cache: maven
+          cache-dependency-path: backend/pom.xml
 
       # application.yml has no default signing key on purpose, so it must be
       # supplied for the context-load test to boot.
       - name: Provide a signing key for the build
         run: echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> $GITHUB_ENV
+
+      # Fails loudly if the wrapper is missing or unparseable. That distinction
+      # was the difference between a real build and an instant, unexplained
+      # failure, so it is checked before anything depends on it.
+      - name: Check the Maven wrapper is usable
+        run: |
+          set -euo pipefail
+          f=.mvn/wrapper/maven-wrapper.properties
+          test -f mvnw || { echo "mvnw is missing from the checkout"; exit 1; }
+          test -f "$f" || { echo "$f is missing"; exit 1; }
+          # A committed-as-UTF-16 properties file still exists here, because git
+          # treats any file containing NUL as binary and leaves its bytes alone
+          # regardless of the text=auto rule. The wrapper then cannot parse it
+          # and the build dies instantly. Compare byte counts rather than using
+          # grep, which does not reliably match a NUL byte.
+          total=$(wc -c < "$f")
+          without_nul=$(tr -d '\000' < "$f" | wc -c)
+          if [ "$total" -ne "$without_nul" ]; then
+            echo "$f contains NUL bytes ($total bytes, $without_nul without NUL):"
+            echo "it was committed as UTF-16, which the wrapper script cannot read."
+            exit 1
+          fi
+          echo "wrapper properties: $(cat "$f")"
 
       # docker-compose.yml mounts init.sql into the database container, which
       # is how a local run gets pgvector. A service container has no such mount,
@@ -63,11 +94,22 @@ jobs:
       # instead of passing quietly.
       - name: Enable the pgvector extension
         run: |
-          docker run --rm --network host \
-            -e PGPASSWORD=password123 \
+          set -euo pipefail
+          ready=""
+          for i in $(seq 1 30); do
+            if docker run --rm --network host -e PGPASSWORD=password123 \
+                pgvector/pgvector:pg15 \
+                psql -h 127.0.0.1 -U admin -d delivery_db -tAc "SELECT 1" >/dev/null 2>&1; then
+              ready=yes
+              break
+            fi
+            echo "waiting for postgres (attempt $i/30)"
+            sleep 2
+          done
+          test -n "$ready" || { echo "postgres never became reachable"; exit 1; }
+          docker run --rm --network host -e PGPASSWORD=password123 \
             pgvector/pgvector:pg15 \
-            psql -h 127.0.0.1 -U admin -d delivery_db \
-            -v ON_ERROR_STOP=1 \
+            psql -h 127.0.0.1 -U admin -d delivery_db -v ON_ERROR_STOP=1 \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "SELECT extname, extversion FROM pg_extension WHERE extname='vector';"
 
