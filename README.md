@@ -2,7 +2,47 @@
 
 SwiftDeliver is a modern, full-stack web application designed to manage package deliveries. It connects Clients, Couriers (Livreurs), and Administrators through a unified, role-based platform. 
 
-The system uses **Artificial Intelligence (Google OR-Tools)** and **OSRM (Open Source Routing Machine)** for multi-stop route optimization, and **WebSockets** for real-time live map tracking.
+The system uses **Artificial Intelligence (Google OR-Tools)** and **OSRM (Open Source Routing Machine)** for multi-stop route optimization, and **SSE over Redis** for real-time live map tracking.
+
+---
+
+## 🔑 Demo accounts
+
+A ready-made dataset is available so the platform can be explored without
+registering anything. **It only exists after you run the seeder**, which is
+opt-in and never touches a database that already has users in it:
+
+```bash
+cd backend
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo
+```
+
+Then open **http://localhost:3000** and sign in with any of these. The password
+is `password123` for all of them.
+
+| Email | Role | What it lets you check |
+| :--- | :--- | :--- |
+| `admin@swift.com` | `ADMIN` | Dashboard KPIs, fleet map, manual courier assignment |
+| `courier1@swift.com` | `LIVREUR` | 3 stops, one already in transit — route optimisation and status changes |
+| `courier2@swift.com` | `LIVREUR` | 2 assigned stops |
+| `client1@swift.com` | `CLIENT` | Has an in-transit order, so the live tracking map works |
+| `client2@swift.com` | `CLIENT` | 2 assigned orders |
+| `client3@swift.com` | `CLIENT` | 2 **unpaid** orders — the quote → pay → dispatch path |
+
+The seeded data spans every delivery state (`PENDING`, `ASSIGNED`,
+`IN_TRANSIT`, `DELIVERED`, `CANCELLED`) and both payment axes, so the
+dashboards and the activity feed have something real to show. All KPIs are live
+aggregates from the database — an empty database reports zero rather than an
+invented number.
+
+**Worth trying:** sign in as `client3@swift.com`, create a delivery and watch
+the fare be computed from the real road route, then pay for it. A courier is
+only assigned *after* payment is captured, so an unpaid order never occupies a
+courier's capacity.
+
+> The seeder is the only way to obtain an administrator. Registration refuses
+> the `ADMIN` role on purpose, because the role is chosen by the caller and
+> accepting it would let anyone take over the platform.
 
 ---
 
@@ -17,10 +57,10 @@ The system uses **Artificial Intelligence (Google OR-Tools)** and **OSRM (Open S
 ### 🚚 Courier (Livreur)
 - View a dedicated dashboard of assigned deliveries.
 - **AI Route Optimization**: Automatically computes the mathematically optimal path to visit all pickup and drop-off points using Google OR-Tools.
-- **Simulate Movement**: One-click broadcast of GPS coordinates along the optimized path via WebSockets for demonstration purposes.
+- **Simulate Movement**: Replays GPS positions along the optimized route, fetched live from the routing engine, for demonstration purposes.
 
 ### 🛡️ Admin
-- Live Dashboard with platform analytics (Simulated vs Real numbers).
+- Live dashboard with platform analytics. Every figure is a live aggregate computed by the database; nothing is seeded or backfilled, so an empty database honestly reports zero.
 - Manage user roles and system settings.
 - Real-time event feed of what is happening on the platform.
 
@@ -31,7 +71,8 @@ The system uses **Artificial Intelligence (Google OR-Tools)** and **OSRM (Open S
 ### Backend
 - **Java 17** & **Spring Boot 3.3**
 - **Google OR-Tools** (Vehicle Routing Problem AI)
-- **Spring WebSockets / STOMP** (Real-time updates)
+- **Server-Sent Events + Redis** (real-time notifications and live tracking)
+- **Spring WebSocket / STOMP broker** with JWT authentication on `CONNECT`
 - **Spring Security + JWT** (Stateless authentication)
 - **PostgreSQL** (Relational Database)
 - **Redis** (Cache & Message Broker)
@@ -143,13 +184,8 @@ The seeder is bound to the `demo` profile, so it can never run against a real
 database by accident. It creates an administrator, couriers, clients, and
 deliveries spanning pending / assigned / in-transit / delivered / cancelled.
 
-**Default accounts created by the seeder** (password `password123`):
-
-| Email | Role |
-| :--- | :--- |
-| `admin@swift.com` | `ADMIN` |
-| `courier1@swift.com`, `courier2@swift.com` | `LIVREUR` |
-| `client1@swift.com`, `client2@swift.com` | `CLIENT` |
+**Default accounts created by the seeder** are listed in
+[Demo accounts](#-demo-accounts) above.
 
 > Administrator accounts cannot be created through `/register` — the role is
 > client-controlled, so accepting it would let anyone take over the platform. The
