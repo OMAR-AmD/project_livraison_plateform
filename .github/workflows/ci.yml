@@ -134,7 +134,7 @@ jobs:
       # built on 20, which means CI proved the app builds on a runtime version
       # nobody ships. The image is the environment that reaches users, so that is
       # the version the checks have to agree with.
-- name: Set up Node 20
+      - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
