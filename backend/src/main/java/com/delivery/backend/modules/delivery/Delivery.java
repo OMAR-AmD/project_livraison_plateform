@@ -50,6 +50,25 @@ public class Delivery {
     @Column(name = "payment_status")
     private String paymentStatus;
 
+    // Sprint 1 — Preuve de livraison cryptographique (anti-répudiation).
+    // Position GPS réelle du livreur à l'instant du passage à DELIVERED,
+    // horodatage de la livraison, distance mesurée jusqu'à la destination,
+    // et hash SHA-256 scellant (commande, livreur, client, position, instant).
+    @Column(name = "delivered_lat")
+    private Double deliveredLat;
+
+    @Column(name = "delivered_lng")
+    private Double deliveredLng;
+
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
+    @Column(name = "proof_distance_m")
+    private Double proofDistanceM;
+
+    @Column(name = "proof_hash", length = 64)
+    private String proofHash;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", nullable = false)
     private User client;
@@ -116,6 +135,16 @@ public class Delivery {
     public void setPrice(Double price) { this.price = price; }
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public Double getDeliveredLat() { return deliveredLat; }
+    public void setDeliveredLat(Double deliveredLat) { this.deliveredLat = deliveredLat; }
+    public Double getDeliveredLng() { return deliveredLng; }
+    public void setDeliveredLng(Double deliveredLng) { this.deliveredLng = deliveredLng; }
+    public LocalDateTime getDeliveredAt() { return deliveredAt; }
+    public void setDeliveredAt(LocalDateTime deliveredAt) { this.deliveredAt = deliveredAt; }
+    public Double getProofDistanceM() { return proofDistanceM; }
+    public void setProofDistanceM(Double proofDistanceM) { this.proofDistanceM = proofDistanceM; }
+    public String getProofHash() { return proofHash; }
+    public void setProofHash(String proofHash) { this.proofHash = proofHash; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

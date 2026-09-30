@@ -27,6 +27,11 @@ public class DeliveryResponse {
     private String paymentStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Double deliveredLat;
+    private Double deliveredLng;
+    private LocalDateTime deliveredAt;
+    private Double proofDistanceM;
+    private String proofHash;
 
     public DeliveryResponse() {}
 
@@ -49,6 +54,11 @@ public class DeliveryResponse {
         this.paymentStatus = delivery.getPaymentStatus();
         this.createdAt = delivery.getCreatedAt();
         this.updatedAt = delivery.getUpdatedAt();
+        this.deliveredLat = delivery.getDeliveredLat();
+        this.deliveredLng = delivery.getDeliveredLng();
+        this.deliveredAt = delivery.getDeliveredAt();
+        this.proofDistanceM = delivery.getProofDistanceM();
+        this.proofHash = delivery.getProofHash();
     }
 
     public UUID getId() { return id; }
@@ -91,4 +101,14 @@ public class DeliveryResponse {
     public void setPrice(Double price) { this.price = price; }
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public Double getDeliveredLat() { return deliveredLat; }
+    public void setDeliveredLat(Double deliveredLat) { this.deliveredLat = deliveredLat; }
+    public Double getDeliveredLng() { return deliveredLng; }
+    public void setDeliveredLng(Double deliveredLng) { this.deliveredLng = deliveredLng; }
+    public LocalDateTime getDeliveredAt() { return deliveredAt; }
+    public void setDeliveredAt(LocalDateTime deliveredAt) { this.deliveredAt = deliveredAt; }
+    public Double getProofDistanceM() { return proofDistanceM; }
+    public void setProofDistanceM(Double proofDistanceM) { this.proofDistanceM = proofDistanceM; }
+    public String getProofHash() { return proofHash; }
+    public void setProofHash(String proofHash) { this.proofHash = proofHash; }
 }

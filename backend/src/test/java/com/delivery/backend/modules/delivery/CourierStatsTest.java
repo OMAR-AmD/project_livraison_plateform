@@ -35,7 +35,9 @@ class CourierStatsTest {
 
         // The other constructor dependencies are never touched by
         // getCourierStats, so nulls are safe and keep the test free of Spring.
-        return new DeliveryService(repository, null, null, null, null, null, null, null, null, null);
+        // Eleven arguments is past the point where this reads well; if a twelfth
+        // arrives, build the object through a small factory instead of appending.
+        return new DeliveryService(repository, null, null, null, null, null, null, null, null, null, null);
     }
 
     private Delivery delivery(DeliveryStatus status, Integer rating) {

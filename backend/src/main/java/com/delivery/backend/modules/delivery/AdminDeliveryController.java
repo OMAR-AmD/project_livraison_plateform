@@ -132,4 +132,27 @@ public class AdminDeliveryController {
         }
         return ResponseEntity.ok(trail);
     }
+
+    /**
+     * Re-verifies the sealed proof of delivery for a delivery and reports whether
+     * it still holds.
+     *
+     * <p>This is what turns the seal from a stored string into a check. The seal
+     * is only useful if someone can ask "is this still intact?" and get an answer
+     * the platform computed, not one a person typed.
+     *
+     * <p>409 when the delivery was never sealed. Reporting a delivery with no
+     * proof as {@code verified: true} would be the security equivalent of a check
+     * that cannot fail; reporting it as {@code verified: false} would accuse an
+     * honest courier of tampering. Neither is acceptable, so the absence is its
+     * own answer.
+     */
+    @GetMapping("/{id}/proof")
+    public ResponseEntity<DeliveryService.DeliveryProofView> getProof(@PathVariable UUID id) {
+        DeliveryService.DeliveryProofView proof = deliveryService.getProof(id);
+        if (proof == null) {
+            return ResponseEntity.status(409).build();
+        }
+        return ResponseEntity.ok(proof);
+    }
 }

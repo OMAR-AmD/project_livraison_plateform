@@ -78,7 +78,7 @@ public class ClientDeliveryController {
     public ResponseEntity<com.delivery.backend.modules.delivery.dto.LocationUpdateRequest> getCourierLocation(
             @PathVariable UUID id,
             @AuthenticationPrincipal User client) {
-        com.delivery.backend.modules.delivery.dto.LocationUpdateRequest loc = deliveryService.getCourierLocation(id);
+        com.delivery.backend.modules.delivery.dto.LocationUpdateRequest loc = deliveryService.getCourierLocationForClient(id, client);
         if (loc == null) {
             return ResponseEntity.notFound().build();
         }

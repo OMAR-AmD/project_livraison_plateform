@@ -50,8 +50,9 @@ public class DeliveryService {
     private final PricingService pricingService;
     private final TrajectoryFraudService trajectoryFraudService;
     private final FraudTrailStore fraudTrailStore;
+    private final DeliveryProofService proofService;
 
-    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore) {
+    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore, DeliveryProofService proofService) {
         this.deliveryRepository = deliveryRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
@@ -62,6 +63,7 @@ public class DeliveryService {
         this.pricingService = pricingService;
         this.trajectoryFraudService = trajectoryFraudService;
         this.fraudTrailStore = fraudTrailStore;
+        this.proofService = proofService;
     }
 
     public void updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
@@ -157,6 +159,86 @@ public class DeliveryService {
             }
         }
         return null;
+    }
+
+    /**
+     * Client access to a courier's position, restricted to the client who owns the
+     * order. Without this check any authenticated client could follow any delivery
+     * by guessing its UUID (IDOR).
+     *
+     * <p>A delivery that is not yours reports the same thing as a delivery that
+     * does not exist, on purpose. Distinguishing the two would turn this endpoint
+     * into an existence oracle: an attacker enumerating UUIDs could tell "this
+     * order is real, just not mine" from "this order is not real", which is how a
+     * guessable-identifier leak is turned into a map of the order book.
+     */
+    public com.delivery.backend.modules.delivery.dto.LocationUpdateRequest getCourierLocationForClient(
+            UUID deliveryId, User client) {
+        Delivery delivery = deliveryRepository.findById(deliveryId).orElse(null);
+        if (delivery == null || !delivery.getClient().getId().equals(client.getId())) {
+            throw new IllegalArgumentException("Delivery not found");
+        }
+        return getCourierLocation(deliveryId);
+    }
+
+    /**
+     * What a sealed proof of delivery looks like when read back.
+     *
+     * @param verified     the MAC recomputed from the stored fields matches the
+     *                     one on record. False means a field was altered after
+     *                     the delivery, or the key was rotated since.
+     * @param verifiable   whether verification was even possible. A delivery
+     *                     unassigned after the fact can no longer be verified,
+     *                     because the courier's identity is part of what was
+     *                     sealed; reporting that as "verified" would be a lie and
+     *                     as "tampered" would be a false accusation.
+     */
+    public record DeliveryProofView(
+            boolean verified,
+            boolean verifiable,
+            LocalDateTime deliveredAt,
+            Double deliveredLat,
+            Double deliveredLng,
+            Double distanceM,
+            String proof) {
+    }
+
+    /**
+     * Re-derives the seal for a delivery from its stored fields and reports
+     * whether it still matches.
+     *
+     * <p>Returns null when the delivery was never sealed, so the caller can
+     * answer honestly instead of reporting an unverifiable delivery as fine.
+     */
+    @Transactional(readOnly = true)
+    public DeliveryProofView getProof(UUID deliveryId) {
+        Delivery delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
+
+        if (delivery.getProofHash() == null || delivery.getDeliveredAt() == null
+                || delivery.getDeliveredLat() == null || delivery.getDeliveredLng() == null) {
+            return null;
+        }
+
+        User courier = delivery.getCourier();
+        boolean verifiable = courier != null && delivery.getClient() != null;
+        boolean verified = verifiable && proofService.verify(
+                delivery.getId(),
+                courier.getId(),
+                delivery.getClient().getId(),
+                delivery.getDeliveredLat(),
+                delivery.getDeliveredLng(),
+                delivery.getDeliveredAt(),
+                delivery.getProofHash());
+
+        return new DeliveryProofView(
+                verified,
+                verifiable,
+                delivery.getDeliveredAt(),
+                delivery.getDeliveredLat(),
+                delivery.getDeliveredLng(),
+                delivery.getProofDistanceM(),
+                delivery.getProofHash());
     }
 
     /**
@@ -501,11 +583,33 @@ public class DeliveryService {
 
     @Transactional
     public DeliveryResponse updateDeliveryStatus(UUID deliveryId, DeliveryStatus newStatus, User courier) {
+        return updateDeliveryStatus(deliveryId, newStatus, null, null, courier);
+    }
+
+    /**
+     * Moves a delivery to a new status, sealing a proof of delivery when — and
+     * only when — the target is DELIVERED.
+     *
+     * <p>Reaching DELIVERED requires a fresh GPS position, either supplied in the
+     * request or taken from the courier's last broadcast (Redis). If neither
+     * exists the delivery is refused, and if the position is further than
+     * {@link DeliveryProofService#MAX_DELIVERY_DISTANCE_M} from the destination it
+     * is refused as well: a delivery cannot be confirmed from the other side of
+     * the city. What is sealed, and why it is an HMAC rather than a hash, is
+     * documented on {@link DeliveryProofService}.
+     */
+    @Transactional
+    public DeliveryResponse updateDeliveryStatus(UUID deliveryId, DeliveryStatus newStatus,
+                                                 Double proofLat, Double proofLng, User courier) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
         if (delivery.getCourier() == null || !delivery.getCourier().getId().equals(courier.getId())) {
             throw new IllegalArgumentException("You are not assigned to this delivery");
+        }
+
+        if (newStatus == DeliveryStatus.DELIVERED) {
+            sealDeliveryProof(delivery, proofLat, proofLng, courier);
         }
 
         delivery.setStatus(newStatus);
@@ -543,6 +647,54 @@ public class DeliveryService {
         }
 
         return toResponse(delivery);
+    }
+
+    private void sealDeliveryProof(Delivery delivery, Double proofLat, Double proofLng, User courier) {
+        Double lat = proofLat;
+        Double lng = proofLng;
+
+        if (lat == null || lng == null) {
+            var lastKnown = getCourierLocation(delivery.getId());
+            if (lastKnown != null) {
+                lat = lastKnown.getLatitude();
+                lng = lastKnown.getLongitude();
+            }
+        }
+
+        if (lat == null || lng == null) {
+            throw new IllegalArgumentException(
+                    "Live GPS position required to confirm delivery: broadcast your location first");
+        }
+
+        Double distanceM = null;
+        if (delivery.getDropoffLat() != null && delivery.getDropoffLng() != null) {
+            distanceM = proofService.haversineMeters(lat, lng,
+                    delivery.getDropoffLat(), delivery.getDropoffLng());
+            if (distanceM > DeliveryProofService.MAX_DELIVERY_DISTANCE_M) {
+                throw new IllegalArgumentException(
+                        "Delivery refused: you are " + Math.round(distanceM)
+                                + " m from the destination (limit "
+                                + Math.round(DeliveryProofService.MAX_DELIVERY_DISTANCE_M) + " m)");
+            }
+        }
+
+        // seal() hands back the timestamp it actually hashed, and that is the one
+        // persisted. Storing a fresh now() instead would look identical here and
+        // break later: the in-memory clock carries nanoseconds, the column stores
+        // microseconds, so re-deriving from the stored row would recompute a
+        // different payload and report an honest delivery as tampered with.
+        DeliveryProofService.Seal seal = proofService.seal(
+                delivery.getId(), courier.getId(), delivery.getClient().getId(), lat, lng,
+                LocalDateTime.now());
+
+        delivery.setDeliveredLat(lat);
+        delivery.setDeliveredLng(lng);
+        delivery.setDeliveredAt(seal.sealedAt());
+        delivery.setProofDistanceM(distanceM);
+        delivery.setProofHash(seal.hash());
+        log.info("Delivery {} sealed: proof {} at {} m from destination.",
+                delivery.getId(), seal.hash().substring(0, 12),
+                distanceM == null ? -1 : Math.round(distanceM));
     }
 
     public List<DeliveryResponse> getDeliveriesForClient(User client) {

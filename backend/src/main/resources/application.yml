@@ -77,3 +77,15 @@ application:
       # For local development:  export JWT_SECRET_KEY=$(openssl rand -hex 32)
       secret-key: ${JWT_SECRET_KEY}
       expiration: ${JWT_EXPIRATION:86400000}
+  proof:
+    # Root secret for the delivery-proof MAC (see DeliveryProofService). The key
+    # actually used to seal is derived from this value rather than being equal to
+    # it: the class computes a purpose-bound key from it, so the seal and JWT
+    # signatures never share key material even when both trace back to one root
+    # secret.
+    #
+    # Defaults to the JWT secret so a single secret configures the whole
+    # platform. Set PROOF_HMAC_KEY to rotate the two independently. There is no
+    # literal fallback on purpose: a well-known default would make every proof in
+    # the system forgeable, and nothing would look wrong.
+    hmac-key: ${PROOF_HMAC_KEY:${JWT_SECRET_KEY}}

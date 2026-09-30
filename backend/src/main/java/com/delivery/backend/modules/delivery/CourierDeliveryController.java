@@ -47,7 +47,8 @@ public class CourierDeliveryController {
             @PathVariable UUID id,
             @Valid @RequestBody DeliveryStatusUpdateRequest request,
             @AuthenticationPrincipal User courier) {
-        return ResponseEntity.ok(deliveryService.updateDeliveryStatus(id, request.getStatus(), courier));
+        return ResponseEntity.ok(deliveryService.updateDeliveryStatus(
+                id, request.getStatus(), request.getLatitude(), request.getLongitude(), courier));
     }
 
     @PatchMapping("/{id}/location")
