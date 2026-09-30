@@ -55,6 +55,24 @@ const auth = (t) => ({ 'Content-Type': 'application/json', Authorization: `Beare
   };
 
   // ---- the core: move it to the other courier ----
+  // Pin the starting courier FIRST. This check used to assume auto-dispatch had
+  // parked the order on courier1, and that assumption silently rotted: the
+  // dispatcher legitimately chose courier2, the explicit assign then correctly
+  // returned 400 ("already assigned to this delivery"), and three assertions
+  // failed for a reason that had nothing to do with manual reassignment.
+  //
+  // A check that depends on which courier the dispatcher picked can be written
+  // to pass under either answer, so it proves nothing. Setting the origin
+  // explicitly makes the move a real move.
+  const whoPickedIt = (await j('/api/v1/admin/deliveries', { headers: A })).body
+    .find((d) => d.id === created.id);
+  console.log(`  auto-dispatch chose ${whoPickedIt?.courierEmail || 'nobody'}; pinning the origin`);
+  await unassign(created.id);
+  const pinned = await assign(created.id, c1.id);
+  ok('the scratch order is pinned to courier1 before testing a move',
+    pinned.status === 200 && pinned.body?.courierEmail === c1.email,
+    `HTTP ${pinned.status}, courier=${pinned.body?.courierEmail}`);
+
   const r1 = await assign(created.id, c2.id);
   ok('reassign to courier2 succeeds', r1.status === 200, `HTTP ${r1.status} ${JSON.stringify(r1.body).slice(0, 120)}`);
   ok('reassigned delivery reports courier2', r1.body?.courierEmail === c2.email, r1.body?.courierEmail);
@@ -144,9 +162,15 @@ const auth = (t) => ({ 'Content-Type': 'application/json', Authorization: `Beare
     await assign(o.id, firstListed.id); // both stops onto the FIRST courier
   }
   const firstListedTok = firstListed.email === c1.email ? c1T : c2T;
-  const busy = (await round(firstListedTok)).filter((d) => ['ASSIGNED', 'IN_TRANSIT'].includes(d.status));
+  // Count only the stops this script loaded. Counting the courier's whole round
+  // asserts on the demo data, so any pre-existing active stop -- the seeded
+  // "2 boxes - Maarif" is ASSIGNED -- makes the precondition fail and the check
+  // below it unverifiable. The precondition has to be owned, not borrowed.
+  const busy = (await round(firstListedTok)).filter((d) =>
+    ['ASSIGNED', 'IN_TRANSIT'].includes(d.status) && loadIds.includes(d.id));
+  const loadedOk = busy.length === 2;
   ok('the first-listed courier is deliberately loaded with 2 active stops',
-    busy.length === 2, `${firstListed.email} has ${busy.length}`);
+    loadedOk, `${firstListed.email} has ${busy.length} of the 2 test stops`);
 
   const probe = (await j('/api/v1/client/deliveries', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clientT}` },
@@ -159,8 +183,12 @@ const auth = (t) => ({ 'Content-Type': 'application/json', Authorization: `Beare
   const probed = (await j('/api/v1/admin/deliveries', { headers: A })).body.find((d) => d.id === probe.id);
   console.log(`  --- auto-dispatch: ${firstListed.email} (first in list) loaded with 2;`
     + ` new paid order went to ${probed.courierEmail || 'nobody'} ---`);
+  // Skipping this when the precondition failed would hide the failure rather than
+  // report it. First-fit and best-fit both send the stop to the idle courier
+  // unless the first-listed one is genuinely loaded, so an unloaded fleet makes
+  // this assertion meaningless. It fails loudly instead.
   ok('a paid order skips the loaded first-listed courier',
-    probed.courierId === otherListed.id,
+    loadedOk && probed.courierId === otherListed.id,
     `went to ${probed.courierEmail}; ${firstListed.email} is the loaded first-listed courier, ${otherListed.email} is idle`);
 
   loadIds.push(probe.id);

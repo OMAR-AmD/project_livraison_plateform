@@ -7,6 +7,7 @@ import com.delivery.backend.modules.delivery.dto.DeliveryQuoteResponse;
 import com.delivery.backend.modules.delivery.dto.DeliveryRequest;
 import com.delivery.backend.modules.delivery.dto.DeliveryResponse;
 import com.delivery.backend.modules.notification.NotificationService;
+import com.delivery.backend.modules.ai.TrajectoryFraudService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Duration;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,8 +48,9 @@ public class DeliveryService {
 
     private final RouteOptimizationService routeOptimizationService;
     private final PricingService pricingService;
+    private final TrajectoryFraudService trajectoryFraudService;
 
-    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService) {
+    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService) {
         this.deliveryRepository = deliveryRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
@@ -55,6 +59,7 @@ public class DeliveryService {
         this.objectMapper = objectMapper;
         this.routeOptimizationService = routeOptimizationService;
         this.pricingService = pricingService;
+        this.trajectoryFraudService = trajectoryFraudService;
     }
 
     public void updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
@@ -75,9 +80,74 @@ public class DeliveryService {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        
-        messagingTemplate.convertAndSend("/topic/colis/" + deliveryId, 
+
+        messagingTemplate.convertAndSend("/topic/colis/" + deliveryId,
             new com.delivery.backend.modules.delivery.dto.LocationUpdateRequest(latitude, longitude));
+
+        // AI fraud detection. Runs after the position is published so a detection
+        // problem can never block a courier's broadcast -- losing a coordinate is
+        // a worse failure than losing an alert, and the two must not share a fate.
+        try {
+            scoreForFraud(delivery, latitude, longitude, courier);
+        } catch (Exception e) {
+            log.warn("fraud scoring failed for delivery {}: {}", deliveryId, e.toString());
+        }
+    }
+
+    /**
+     * Scores one position update and raises an alert when the model says the
+     * movement is not physically plausible.
+     *
+     * <p>Kept separate from {@link #updateCourierLocation} so the caller can
+     * decide what a detection failure costs. It must not be allowed to cost a
+     * courier their coordinates.
+     */
+    private void scoreForFraud(Delivery delivery, Double latitude, Double longitude, User courier) {
+        if (latitude == null || longitude == null
+                || delivery.getDropoffLat() == null || delivery.getDropoffLng() == null) {
+            return;
+        }
+
+        TrajectoryFraudService.Verdict verdict = trajectoryFraudService.evaluate(
+                delivery.getId(),
+                latitude, longitude,
+                delivery.getDropoffLat(), delivery.getDropoffLng());
+
+        // Every fix's score is retained so the admin panel can show the trajectory,
+        // not just the final verdict.
+        redisTemplate.opsForList().leftPush(
+                "fraude:score:" + delivery.getId(),
+                String.format(Locale.ROOT, "{\"at\":%d,\"score\":%.4f,\"fraud\":%b,"
+                        + "\"speed\":%.2f,\"stall\":%.0f,\"dist\":%.0f}",
+                        System.currentTimeMillis(), verdict.score(), verdict.fraud(),
+                        verdict.speedMps(), verdict.stallSeconds(), verdict.distanceToTargetM()));
+        redisTemplate.expire("fraude:score:" + delivery.getId(), Duration.ofHours(6));
+
+        if (!verdict.shouldNotify()) {
+            return;
+        }
+
+        String message = String.format(Locale.ROOT,
+                "Suspicious trajectory detected: score %.0f%% (threshold %.0f%%), "
+                        + "%.0f m/s, %s, %.0f km from the drop-off.",
+                verdict.score() * 100, verdict.threshold() * 100,
+                verdict.speedMps(),
+                verdict.stallSeconds() >= 90
+                        ? String.format(Locale.ROOT, "no progress for %d min",
+                                Math.round(verdict.stallSeconds() / 60))
+                        : "moving",
+                verdict.distanceToTargetM() / 1000.0);
+
+        log.warn("fraud alert on delivery {} (courier {}): {}", delivery.getId(), courier.getId(), message);
+
+        // The client sees an unverified-delivery notice rather than the internal
+        // suspicion: what they need to know is that the proof of delivery is
+        // contested, not that a model fired.
+        if (delivery.getClient() != null) {
+            notificationService.createNotification(delivery.getClient(),
+                    "Your delivery '" + delivery.getDescription()
+                            + "' is being verified. Delivery proof is under review.");
+        }
     }
 
     public com.delivery.backend.modules.delivery.dto.LocationUpdateRequest getCourierLocation(UUID deliveryId) {
