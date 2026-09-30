@@ -40,6 +40,16 @@ public class AdminDeliveryController {
         return ResponseEntity.ok(deliveryService.adminUpdateStatus(id, request.getStatus()));
     }
 
+    /**
+     * Returns a delivery to the unassigned pool. The delivery goes back to
+     * PENDING with no courier, so the next paid order — or another manual
+     * assignment — can pick it up.
+     */
+    @DeleteMapping("/{id}/assign")
+    public ResponseEntity<DeliveryResponse> unassignCourier(@PathVariable UUID id) {
+        return ResponseEntity.ok(deliveryService.unassignCourier(id));
+    }
+
     @GetMapping("/{id}/location")
     public ResponseEntity<com.delivery.backend.modules.delivery.dto.LocationUpdateRequest> getCourierLocation(
             @PathVariable UUID id) {

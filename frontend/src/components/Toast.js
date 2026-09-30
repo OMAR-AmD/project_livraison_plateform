@@ -161,7 +161,11 @@ export function ToastProvider({ children }) {
            the bottom-right. This position collides with neither. */}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-3 px-4"
+        // Above Modal (z-1100), not below it. At z-60 a toast raised while a
+        // dialog was open rendered underneath the dialog's backdrop and was
+        // simply never seen, which is the worst possible time to lose an error
+        // message. Pinned by verify_assign_ui.js.
+        className="pointer-events-none fixed bottom-6 left-1/2 z-[1200] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-3 px-4"
       >
         {toasts.map((toast) => (
           <div

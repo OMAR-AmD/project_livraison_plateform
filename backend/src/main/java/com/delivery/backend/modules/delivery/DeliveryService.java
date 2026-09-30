@@ -186,10 +186,19 @@ public class DeliveryService {
     }
 
     /**
-     * DVRP-TW auto-dispatch: finds the first courier whose existing workload plus this
-     * delivery still fits inside the 45-minute time-window constraint.
+     * DVRP-TW auto-dispatch: finds the courier whose existing workload plus this
+     * delivery fits inside the 45-minute time-window constraint, and gives the
+     * stop to the one whose round comes out shortest.
      *
      * <p>Extracted from createDelivery so that dispatch is tied to payment capture.
+     *
+     * <p>This used to stop at the <em>first</em> courier that fitted. That made
+     * the platform look broken rather than simple: couriers came back in
+     * insertion order, so one courier absorbed every order and the others sat
+     * idle with an empty round. Two paid orders both landed on courier1 and
+     * courier2 was never dispatched, ever. Scoring all candidates and taking the
+     * cheapest round is the same amount of solver work and actually balances the
+     * fleet. An administrator can still override the choice afterwards.
      */
     private Delivery autoDispatch(Delivery delivery) {
         try {
@@ -202,11 +211,17 @@ public class DeliveryService {
                 return delivery;
             }
 
+            User bestCourier = null;
+            long bestSeconds = Long.MAX_VALUE;
+            int bestStops = Integer.MAX_VALUE;
+
             for (User potentialCourier : allCouriers) {
                 // Get this courier's active deliveries
                 List<Delivery> activeDeliveries = deliveryRepository.findByCourierOrderByCreatedAtDesc(potentialCourier).stream()
                     .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT)
                     .collect(java.util.stream.Collectors.toList());
+
+                int loadBefore = activeDeliveries.size();
 
                 // Add the new delivery to test if it fits
                 activeDeliveries.add(delivery);
@@ -223,35 +238,43 @@ public class DeliveryService {
                         routeOptimizationService.optimizeDeliveries(start[0], start[1], activeDeliveries);
 
                     if (isServed(optResponse, delivery)) {
-                        delivery.setCourier(potentialCourier);
-                        delivery.setStatus(DeliveryStatus.ASSIGNED);
-                        delivery = deliveryRepository.save(delivery);
-
-                        notificationService.createNotification(potentialCourier, "New delivery auto-assigned to your route.");
-                        notificationService.createNotification(delivery.getClient(), "Courier found and auto-assigned based on optimal routing.");
-
-                        log.info("Delivery {} assigned to {} ({} stops on the round).",
-                                delivery.getId(), potentialCourier.getEmail(), optResponse.getOrderedWaypoints().size());
-                        break; // Stop searching once assigned
+                        int stops = optResponse.getOrderedWaypoints().size();
+                        // Cheapest round wins. Ties go to the less loaded courier,
+                        // so a single order cannot be decided by iteration order.
+                        boolean better = optResponse.getTotalTimeSeconds() < bestSeconds
+                                || (optResponse.getTotalTimeSeconds() == bestSeconds && loadBefore < bestStops);
+                        if (better) {
+                            bestSeconds = optResponse.getTotalTimeSeconds();
+                            bestStops = loadBefore;
+                            bestCourier = potentialCourier;
+                        }
+                    } else {
+                        // The solver is allowed to discard stops: each pickup and
+                        // drop-off is a disjunctive (droppable) node, so an infeasible
+                        // stop is dropped for a penalty rather than reported as an
+                        // error. A non-empty route therefore proves nothing — the only
+                        // thing that matters is whether THIS delivery survived.
+                        log.debug("Courier {} cannot absorb delivery {} within the constraints.",
+                                potentialCourier.getEmail(), delivery.getId());
                     }
-
-                    // The solver is allowed to discard stops: each pickup and
-                    // drop-off is a disjunctive (droppable) node, so an infeasible
-                    // stop is dropped for a penalty rather than reported as an
-                    // error. A non-empty route therefore proves nothing — the only
-                    // thing that matters is whether THIS delivery survived.
-                    log.debug("Courier {} cannot absorb delivery {} within the constraints.",
-                            potentialCourier.getEmail(), delivery.getId());
-
                 } catch (Exception e) {
-                    // Solver or OSRM failure for this courier: try the next one.
-                    log.debug("Routing failed for courier {}: {}", potentialCourier.getEmail(), e.getMessage());
+                    log.warn("Routing failed for courier {}: {}", potentialCourier.getEmail(), e.getMessage());
                 }
             }
 
-            if (delivery.getCourier() == null) {
-                log.warn("Delivery {} left PENDING: no courier could take it within the 45-minute limit.",
-                        delivery.getId());
+            if (bestCourier != null) {
+                delivery.setCourier(bestCourier);
+                delivery.setStatus(DeliveryStatus.ASSIGNED);
+                delivery = deliveryRepository.save(delivery);
+
+                notificationService.createNotification(bestCourier, "New delivery auto-assigned to your route.");
+                notificationService.createNotification(delivery.getClient(), "Courier found and auto-assigned based on optimal routing.");
+
+                log.info("Delivery {} assigned to {} ({} active stops before, round {}s).",
+                        delivery.getId(), bestCourier.getEmail(), bestStops, bestSeconds);
+            } else {
+                log.info("Delivery {} left unassigned: no courier can absorb it within the "
+                        + "45-minute constraint.", delivery.getId());
             }
         } catch (Exception e) {
             log.error("Auto-dispatch failed for delivery {}", delivery.getId(), e);
@@ -323,8 +346,22 @@ public class DeliveryService {
         return toResponse(delivery);
     }
 
+    /**
+     * Manual assignment, admin only.
+     *
+     * <p>Works on a delivery in any state, including one that is already
+     * assigned or even already delivered: reassigning puts it back to
+     * {@code ASSIGNED} so the new courier has a stop to work. That reset is
+     * deliberate, and it is what lets a dispatcher move a parcel between
+     * couriers mid-round.
+     *
+     * <p>The courier who loses the stop is told, not just the one who gains it.
+     * Silently dropping a delivery out of someone's round is the kind of thing
+     * that makes a courier distrust the dashboard.
+     */
     @Transactional
-    public DeliveryResponse assignCourier(UUID deliveryId, UUID courierId) {        Delivery delivery = deliveryRepository.findById(deliveryId)
+    public DeliveryResponse assignCourier(UUID deliveryId, UUID courierId) {
+        Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
         User courier = userRepository.findById(courierId)
@@ -334,16 +371,64 @@ public class DeliveryService {
             throw new IllegalArgumentException("User is not a courier");
         }
 
+        User previousCourier = delivery.getCourier();
+        if (previousCourier != null && previousCourier.getId().equals(courier.getId())) {
+            throw new IllegalArgumentException(
+                    "'" + courier.getEmail() + "' is already assigned to this delivery");
+        }
+
+        log.warn("Admin assigned delivery {} from {} to {} (was {}).", deliveryId,
+                previousCourier != null ? previousCourier.getEmail() : "nobody",
+                courier.getEmail(), delivery.getStatus());
+
         delivery.setCourier(courier);
         delivery.setStatus(DeliveryStatus.ASSIGNED);
         delivery = deliveryRepository.save(delivery);
-        
-        notificationService.createNotification(courier, 
+
+        if (previousCourier != null) {
+            notificationService.createNotification(previousCourier,
+                "Delivery '" + delivery.getDescription() + "' has been reassigned to another courier.");
+        }
+        notificationService.createNotification(courier,
             "You have been assigned a new delivery: " + delivery.getDescription());
 
-        notificationService.createNotification(delivery.getClient(), 
+        notificationService.createNotification(delivery.getClient(),
             "Your delivery '" + delivery.getDescription() + "' has been assigned to a courier.");
-        
+
+        return toResponse(delivery);
+    }
+
+    /**
+     * Drops the courier from a delivery, admin only.
+     *
+     * <p>Needed to put an order back into the unassigned pool: the automatic
+     * dispatcher only ever runs at payment capture, so without this there is no
+     * way to return a wrongly-assigned parcel to the queue for a fresh decision.
+     * The delivery goes back to {@code PENDING} — leaving it {@code ASSIGNED}
+     * with no courier would be a state the rest of the app has to defend against.
+     */
+    @Transactional
+    public DeliveryResponse unassignCourier(UUID deliveryId) {
+        Delivery delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
+
+        if (delivery.getCourier() == null) {
+            throw new IllegalArgumentException("This delivery has no courier to remove");
+        }
+
+        User previousCourier = delivery.getCourier();
+        log.warn("Admin unassigned delivery {} from {} (was {}).",
+                deliveryId, previousCourier.getEmail(), delivery.getStatus());
+
+        delivery.setCourier(null);
+        delivery.setStatus(DeliveryStatus.PENDING);
+        delivery = deliveryRepository.save(delivery);
+
+        notificationService.createNotification(previousCourier,
+            "Delivery '" + delivery.getDescription() + "' is no longer assigned to you.");
+        notificationService.createNotification(delivery.getClient(),
+            "Your delivery '" + delivery.getDescription() + "' is being reassigned.");
+
         return toResponse(delivery);
     }
 

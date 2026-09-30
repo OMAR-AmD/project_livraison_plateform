@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { adminGetDeliveries, adminGetCouriers, adminAssignCourier, adminDeleteDelivery, adminUpdateDeliveryStatus } from '@/lib/api';
+import { adminGetDeliveries, adminGetCouriers, adminAssignCourier, adminDeleteDelivery, adminUpdateDeliveryStatus, adminUnassignCourier } from '@/lib/api';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/Toast';
 import dynamic from 'next/dynamic';
@@ -60,7 +60,9 @@ export default function AdminView() {
 
   const openAssignModal = (delivery) => {
     setSelectedDelivery(delivery);
-    setSelectedCourier('');
+    // Preselect the current courier so an accidental submit is a no-op rather
+    // than an unassign in disguise.
+    setSelectedCourier(delivery.courierId || '');
     setIsModalOpen(true);
   };
 
@@ -72,8 +74,8 @@ export default function AdminView() {
     }
     setSubmitting(true);
     try {
-      await adminAssignCourier(selectedDelivery.id, selectedCourier);
-      addToast('Courier assigned successfully!', 'success');
+      const updated = await adminAssignCourier(selectedDelivery.id, selectedCourier);
+      addToast(`Assigned to ${updated.courierEmail}`, 'success');
       setIsModalOpen(false);
       fetchData();
     } catch (err) {
@@ -82,6 +84,25 @@ export default function AdminView() {
       setSubmitting(false);
     }
   };
+
+  const handleUnassign = async (delivery) => {
+    if (!confirm(`Take "${delivery.description}" off ${delivery.courierEmail}? The order goes back to the unassigned pool.`)) return;
+    try {
+      await adminUnassignCourier(delivery.id);
+      addToast('Courier removed, order is unassigned', 'success');
+      fetchData();
+    } catch (err) {
+      addToast(err.message || 'Failed to unassign', 'error');
+    }
+  };
+
+  /** How many live stops each courier already has, for the picker. */
+  const courierLoad = (courierId) =>
+    deliveries.filter(
+      (d) =>
+        d.courierId === courierId &&
+        (d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT')
+    ).length;
 
   const handleDelete = async (deliveryId) => {
     if (!confirm('Are you sure you want to delete this delivery?')) return;
@@ -182,12 +203,21 @@ export default function AdminView() {
                         </td>
                         <td className="table-cell">
                           <div className="flex items-center justify-end gap-2">
-                            {d.status === 'PENDING' && (
+                            <button
+                              onClick={() => openAssignModal(d)}
+                              className="btn-secondary btn-sm"
+                              aria-label={`Assign courier to ${d.description}`}
+                            >
+                              {d.courierEmail ? 'Reassign' : 'Assign'}
+                            </button>
+                            {d.courierEmail && (
                               <button
-                                onClick={() => openAssignModal(d)}
-                                className="btn-primary btn-sm"
+                                onClick={() => handleUnassign(d)}
+                                className="btn-ghost btn-sm text-content-faint hover:text-danger-400"
+                                aria-label={`Unassign ${d.description}`}
+                                title="Return to the unassigned pool"
                               >
-                                Assign
+                                Unassign
                               </button>
                             )}
                             <select
@@ -252,9 +282,20 @@ export default function AdminView() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {d.status === 'PENDING' && (
-                        <button onClick={() => openAssignModal(d)} className="btn-primary btn-sm flex-1">
-                          Assign courier
+                      <button
+                        onClick={() => openAssignModal(d)}
+                        className="btn-secondary btn-sm flex-1"
+                        aria-label={`Assign courier to ${d.description}`}
+                      >
+                        {d.courierEmail ? 'Reassign' : 'Assign courier'}
+                      </button>
+                      {d.courierEmail && (
+                        <button
+                          onClick={() => handleUnassign(d)}
+                          className="btn-ghost btn-sm flex-1"
+                          aria-label={`Unassign ${d.description}`}
+                        >
+                          Unassign
                         </button>
                       )}
                       <select
@@ -281,6 +322,18 @@ export default function AdminView() {
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Assign courier">
         <form onSubmit={handleAssign} className="space-y-5">
+          {selectedDelivery && (
+            <div className="rounded-md border border-line bg-surface-raised px-3.5 py-3">
+              <p className="font-semibold text-content">{selectedDelivery.description}</p>
+              <p className="mt-1 text-xs text-content-muted">
+                Currently{' '}
+                <span className="text-content-soft">
+                  {selectedDelivery.courierEmail || 'unassigned'}
+                </span>{' '}
+                · status <span className="text-content-soft">{selectedDelivery.status}</span>
+              </p>
+            </div>
+          )}
           <div>
             <label htmlFor="assign-courier" className="label">
               Courier
@@ -295,15 +348,23 @@ export default function AdminView() {
               <option value="" disabled>
                 Select a courier…
               </option>
-              {couriers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.email}
-                </option>
-              ))}
+              {couriers.map((c) => {
+                // The live stop count, so the dispatcher can see who is already
+                // loaded instead of assigning blind.
+                const load = courierLoad(c.id);
+                const isCurrent = selectedDelivery && selectedDelivery.courierId === c.id;
+                return (
+                  <option key={c.id} value={c.id} disabled={isCurrent}>
+                    {c.email} — {load} active stop{load === 1 ? '' : 's'}
+                    {isCurrent ? ' (current)' : ''}
+                  </option>
+                );
+              })}
             </select>
             <p className="mt-2 text-xs text-content-faint">
-              Note: when payment is captured the platform assigns the courier automatically. This
-              control is for orders that need manual intervention.
+              Assigning overrides the automatic choice. The status is reset to{' '}
+              <span className="text-content-soft">ASSIGNED</span> so the new courier has a stop to
+              work, and both couriers are notified.
             </p>
           </div>
           <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">

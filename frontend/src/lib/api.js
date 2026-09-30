@@ -301,6 +301,15 @@ export async function adminUpdateDeliveryStatus(deliveryId, status) {
   });
 }
 
+/**
+ * Drops the courier from a delivery, returning it to PENDING so it can be
+ * dispatched again. The mirror image of adminAssignCourier, and the only way to
+ * put a wrongly-assigned order back in the pool.
+ */
+export async function adminUnassignCourier(deliveryId) {
+  return apiFetch(`/admin/deliveries/${deliveryId}/assign`, { method: 'DELETE' });
+}
+
 export async function adminGetStats() {
   return apiFetch('/admin/deliveries/stats');
 }

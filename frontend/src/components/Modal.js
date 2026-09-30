@@ -81,7 +81,16 @@ export default function Modal({ isOpen, onClose, title, description, children, f
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4">
+    // z-index must clear Leaflet, not just our own components. Leaflet ships its
+    // own scale: .leaflet-control sits at 800 and .leaflet-top/.leaflet-bottom at
+    // 1000, and the map's container is not a stacking context, so those compete
+    // with us directly. At z-100 the dialog was painted UNDER the zoom buttons:
+    // the map looked like it was in front of the modal and the +/- stayed
+    // clickable straight through the backdrop. 1100 is above everything Leaflet
+    // uses; Toast sits at 1200 so a message raised while a dialog is open is
+    // still visible. Keep those two in step with verify_assign_ui.js, which
+    // fails if this number drops back under 1000.
+    <div className="fixed inset-0 z-[1100] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div
         className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm"
         onClick={onClose}

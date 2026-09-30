@@ -57,6 +57,45 @@ async function login(page, email) {
   if (who !== email) throw new Error(`session belongs to ${who}, expected ${email}`);
 }
 
+const API = 'http://localhost:8080';
+
+/**
+ * The backend's own numbers for a courier, used as the expected values.
+ *
+ * This script used to assert hardcoded figures ("5.0", "2 of 3", "1 review").
+ * That was a trap: the numbers were true of one snapshot of the demo data, so
+ * the suite started failing the moment anybody created or deleted a delivery —
+ * and a suite that cries wolf gets ignored, which is worse than no suite. The
+ * invariant worth protecting is not any particular score, it is that the
+ * courier's own panel and the admin's table are computed the same way from the
+ * same data. So the expectation is read from the API and both views are checked
+ * against it.
+ */
+async function apiStats(email) {
+  const login = await fetch(`${API}/api/v1/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'password123' }),
+  });
+  const { token } = await login.json();
+  const res = await fetch(`${API}/api/v1/courier/deliveries/stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** The same courier's row in the admin users list, read from the API. */
+async function apiAdminRow(email) {
+  const login = await fetch(`${API}/api/v1/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@swift.com', password: 'password123' }),
+  });
+  const { token } = await login.json();
+  const res = await fetch(`${API}/api/v1/admin/users`, { headers: { Authorization: `Bearer ${token}` } });
+  const users = await res.json();
+  return users.find((u) => u.email === email) || null;
+}
+
 /**
  * Read the courier stats strip as a label -> value map.
  *
@@ -94,6 +133,13 @@ async function readStats(page) {
 
   try {
     // ---- courier1: has a real track record ----
+    const api1 = await apiStats('courier1@swift.com');
+    const admin1 = await apiAdminRow('courier1@swift.com');
+    if (!api1) throw new Error('could not read courier1 stats from the API');
+    console.log(`  --- API says: total=${api1.totalDeliveries} done=${api1.completedDeliveries} ` +
+      `active=${api1.activeDeliveries} cancelled=${api1.cancelledDeliveries} ` +
+      `rating=${api1.averageRating} (${api1.ratingCount} reviews) ---`);
+
     await login(page, 'courier1@swift.com');
     await page.goto(`${BASE}/dashboard/deliveries`, { waitUntil: 'domcontentloaded' });
     const s1 = await readStats(page);
@@ -101,28 +147,67 @@ async function readStats(page) {
     console.log('  ' + s1.text.replace(/\n+/g, ' | '));
 
     ok('track record panel renders for a courier', /average rating/i.test(s1.text));
-    ok('Completed counter shows 2', s1.completed === '2', `got "${s1.completed}"`);
-    ok('In progress counter shows 1', s1['in progress'] === '1', `got "${s1['in progress']}"`);
-    ok('Cancelled counter shows 0', s1.cancelled === '0', `got "${s1.cancelled}"`);
+    ok('Completed counter matches the backend', s1.completed === String(api1.completedDeliveries),
+      `ui "${s1.completed}" vs api ${api1.completedDeliveries}`);
+    ok('In progress counter matches the backend', s1['in progress'] === String(api1.activeDeliveries),
+      `ui "${s1['in progress']}" vs api ${api1.activeDeliveries}`);
+    ok('Cancelled counter matches the backend', s1.cancelled === String(api1.cancelledDeliveries),
+      `ui "${s1.cancelled}" vs api ${api1.cancelledDeliveries}`);
+
     // The exact regression this feature shipped with: unrated orders were
-    // averaged in as zeros, turning a single 5-star review into 1.7.
-    ok('average rating reads 5.0', /(^|\s)5\.0(\s|$)/.test(s1.text), s1.text.replace(/\n+/g, ' | '));
-    ok('average rating does NOT read the zero-dragged 1.7', !/1\.7/.test(s1.text));
-    ok('review count shown as "(1 review)"', /\(1 review\)/.test(s1.text));
+    // averaged in as zeros, so a single 5-star review read 1.7. The check is
+    // that the panel shows the API's average and does not show the mean over
+    // ALL assigned deliveries -- which is only a different number when the
+    // courier has unrated orders, so skip it when there are none.
+    const wanted = api1.averageRating == null ? null : Number(api1.averageRating).toFixed(1);
+    if (wanted !== null) {
+      ok('average rating matches the backend', new RegExp(`(^|\\s)${wanted}(\\s|$)`).test(s1.text),
+        `ui should show ${wanted}; got "${s1.text.replace(/\n+/g, ' | ')}"`);
+      if (api1.ratingCount < api1.totalDeliveries) {
+        // What the bug would show: every unrated order counted as a zero, i.e.
+        // the sum of the ratings divided by ALL assigned deliveries. The sum is
+        // recoverable from the API as average x count.
+        const dragged = (api1.averageRating * api1.ratingCount) / api1.totalDeliveries;
+        ok('average is over rated deliveries only, not zero-dragged',
+          !new RegExp(`(^|\\s)${dragged.toFixed(1)}(\\s|$)`).test(s1.text),
+          `correct ${wanted}, zero-dragged would be ${dragged.toFixed(1)} `
+          + `(${api1.ratingCount} rated / ${api1.totalDeliveries} assigned)`);
+      } else {
+        console.log('  (every delivery is rated, so zero-dragging cannot be detected here)');
+      }
+      ok('review count is shown', new RegExp(`\\((\\d+) reviews?\\)`).test(s1.text),
+        `expected (${api1.ratingCount} review(s))`);
+    } else {
+      ok('a courier with no ratings is not given a score', !/\b0\.0\b/.test(s1.text), s1.text.replace(/\n+/g, ' | '));
+    }
     ok('five stars drawn', (await page.locator('[aria-label="Your track record"] svg').count()) >= 5);
 
-    // ---- courier2: no history at all ----
+    // ---- courier2: whatever their history happens to be ----
+    const api2 = await apiStats('courier2@swift.com');
+    const admin2 = await apiAdminRow('courier2@swift.com');
     await login(page, 'courier2@swift.com');
     await page.goto(`${BASE}/dashboard/deliveries`, { waitUntil: 'domcontentloaded' });
     const s2 = await readStats(page);
     console.log('  --- courier2 strip as rendered ---');
     console.log('  ' + s2.text.replace(/\n+/g, ' | '));
 
-    ok('unrated courier is told there are no ratings', /no ratings yet|not rated/i.test(s2.text), s2.text.replace(/\n+/g, ' | '));
-    ok('unrated courier is NOT given a 0.0 score', !/\b0\.0\b/.test(s2.text));
-    ok('unrated courier still sees zero counters', s2.completed === '0' && s2.cancelled === '0',
-      `completed="${s2.completed}" cancelled="${s2.cancelled}"`);
-    ok('no footnote for a courier with no assignments', !/assigned to you in total/i.test(s2.text));
+    ok('courier2 completed counter matches the backend',
+      s2.completed === String(api2.completedDeliveries),
+      `ui "${s2.completed}" vs api ${api2.completedDeliveries}`);
+    if (api2.averageRating == null) {
+      ok('unrated courier is told there are no ratings', /no ratings yet|not rated/i.test(s2.text), s2.text.replace(/\n+/g, ' | '));
+      ok('unrated courier is NOT given a 0.0 score', !/\b0\.0\b/.test(s2.text));
+      if (api2.totalDeliveries === 0) {
+        ok('no footnote for a courier with no assignments at all', !/assigned to you in total/i.test(s2.text));
+      } else {
+        ok('the footnote reports the real assignment total',
+          new RegExp(`\\b${api2.totalDeliveries}\\s+orders?\\b`).test(s2.text),
+          `expected "${api2.totalDeliveries} orders"; got "${s2.text.replace(/\n+/g, ' | ')}"`);
+      }
+    } else {
+      ok('rated courier sees their average', new RegExp(`(^|\\s)${Number(api2.averageRating).toFixed(1)}(\\s|$)`).test(s2.text),
+        s2.text.replace(/\n+/g, ' | '));
+    }
 
     // ---- admin: rating beside each courier ----
     await login(page, 'admin@swift.com');
@@ -151,15 +236,35 @@ async function readStats(page) {
     ok('a Rating column exists', head.some((h) => /rating/i.test(h)), head.join(','));
     ok('a Deliveries column exists', head.some((h) => /deliveries/i.test(h)), head.join(','));
 
+    // The admin table must agree with the courier's own panel. This is the
+    // cross-view check: when the two were computed differently, the courier
+    // read 1.7 while the admin read 5.0 for the same person.
     const c1 = find('courier1@swift.com');
-    ok('courier1 row shows 2 of 3 delivered', /\b2\s*\/\s*3\b/.test(c1[2] || ''), c1.join(' | '));
-    ok('courier1 row shows rating 5.0', /5\.0/.test(c1[3] || ''), c1.join(' | '));
-    ok('courier1 row does NOT show the wrong 1.7', !/1\.7/.test(c1[3] || ''), c1.join(' | '));
+    ok('admin row agrees with the API on deliveries',
+      new RegExp(`\\b${admin1.deliveredDeliveries}\\s*/\\s*${admin1.totalDeliveries}\\b`).test(c1[2] || ''),
+      `ui "${c1[2]}" vs api ${admin1.deliveredDeliveries}/${admin1.totalDeliveries}`);
+    if (admin1.averageRating == null) {
+      ok('admin row shows no score for an unrated courier', /no ratings yet|not rated/i.test(c1[3] || ''), c1.join(' | '));
+    } else {
+      ok('admin row shows the same average the courier sees',
+        new RegExp(`(^|\\s)${Number(admin1.averageRating).toFixed(1)}(\\s|$)`).test(c1[3] || ''),
+        `ui "${c1[3]}" vs api ${admin1.averageRating}`);
+    }
     ok('courier1 rating is labelled as coming from reviews', /review/i.test(c1[3] || ''), c1.join(' | '));
+    ok('admin average and courier panel average are the same number',
+      admin1.averageRating === api1.averageRating,
+      `admin ${admin1.averageRating} vs stats ${api1.averageRating}`);
 
     const c2 = find('courier2@swift.com');
-    ok('courier2 row (no history) shows no score', /no ratings yet|not rated/i.test(c2[3] || ''), c2.join(' | '));
-    ok('courier2 row shows 0 of 0 delivered', /\b0\s*\/\s*0\b/.test(c2[2] || ''), c2.join(' | '));
+    ok('admin row agrees with the API on deliveries for courier2',
+      new RegExp(`\\b${admin2.deliveredDeliveries}\\s*/\\s*${admin2.totalDeliveries}\\b`).test(c2[2] || ''),
+      `ui "${c2[2]}" vs api ${admin2.deliveredDeliveries}/${admin2.totalDeliveries}`);
+    if (admin2.averageRating == null) {
+      ok('courier2 row (no history) shows no score', /no ratings yet|not rated/i.test(c2[3] || ''), c2.join(' | '));
+    } else {
+      ok('courier2 row shows their average',
+        new RegExp(`(^|\\s)${Number(admin2.averageRating).toFixed(1)}(\\s|$)`).test(c2[3] || ''), c2.join(' | '));
+    }
 
     const cl = find('client1@swift.com');
     ok('client row shows a dash, never a fake score', /—/.test(cl[2] || '') && /—/.test(cl[3] || ''), cl.join(' | '));
@@ -175,7 +280,11 @@ async function readStats(page) {
       return strip.getBoundingClientRect().width - document.documentElement.clientWidth;
     });
     ok('courier panel fits a 390px phone', overflow <= 1, `overflows by ${Math.round(overflow)}px`);
-    ok('phone view still shows the rating', /5\.0/.test(m.text), m.text.replace(/\n+/g, ' | '));
+    ok('phone view shows the same rating as the API',
+      api1.averageRating == null
+        ? /no ratings yet|not rated/i.test(m.text)
+        : new RegExp(`(^|\\s)${Number(api1.averageRating).toFixed(1)}(\\s|$)`).test(m.text),
+      m.text.replace(/\n+/g, ' | '));
     ok('no horizontal page scroll on a phone',
       await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1),
       `scrollWidth=${await page.evaluate(() => document.documentElement.scrollWidth)}`);
