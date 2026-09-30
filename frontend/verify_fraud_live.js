@@ -153,7 +153,7 @@ async function main() {
   }
   const honestScores = await readScores(deliveryId);
   honestFraudCount = honestScores.filter((s) => s.fraud).length;
-  const honestSpeeds = honestScores.map((s) => s.speed);
+  const honestSpeeds = honestScores.map((s) => s.speedMps);
   check('honest approach produced no fraud verdict',
     honestFraudCount === 0,
     `${honestFraudCount} of ${honestScores.length} fixes flagged, ` +
@@ -178,12 +178,14 @@ async function main() {
   await sleep(500);
   const afterScores = await readScores(deliveryId);
 
-  const newestFirst = afterScores;
-  const jumpScore = newestFirst.find((s) => s.speed > 200);
+  // The endpoint returns the trail oldest-first, which is the order a curve is
+  // read in. The search below is order-independent either way.
+  const afterJump = afterScores;
+  const jumpScore = afterJump.find((s) => s.speedMps > 200);
   check('the impossible jump raised a fraud verdict',
     !!jumpScore && jumpScore.fraud === true,
     jumpScore
-      ? `speed ${jumpScore.speed} m/s, score ${jumpScore.score}, flagged=${jumpScore.fraud}`
+      ? `speed ${jumpScore.speedMps} m/s, score ${jumpScore.score}, flagged=${jumpScore.fraud}`
       : `no fix with an implausible speed among ${afterScores.length} recorded`);
 
   const newFraud = jumpScore ? [jumpScore] : [];
@@ -222,42 +224,30 @@ async function courierId() {
   return c.id;
 }
 
-/** Read the score trail the detector writes to Redis for this delivery. */
+/** Read the score trail the detector wrote for this delivery.
+ *
+ *  Read through the API, not `docker exec redis-cli`. The trail now has a real
+ *  endpoint — the same one the admin dashboard uses — so shelling into Redis
+ *  tested an internal representation instead of the product, and it would have
+ *  broken silently the moment a field name changed. Which it did.
+ */
 async function readScores(deliveryId) {
-  const list = redisList(`fraude:score:${deliveryId}`);
-  if (list === null) {
-    // Returning [] here would make every downstream assertion pass for the wrong
-    // reason: "no fixes flagged" and "could not read the trail" look identical.
+  const admin = await auth('admin@swift.com');
+  const r = await fetch(`${BASE}/admin/deliveries/${deliveryId}/fraud-trail`, { headers: admin });
+  if (r.status === 409) {
+    // Treating this as an empty trail would make every assertion below pass for
+    // the wrong reason: "nothing flagged" and "nothing was ever recorded" look
+    // identical from here.
     throw new Error(
-      'could not read the fraud score trail from redis. Check `docker ps` for ' +
-      'delivery_redis; without it this check cannot verify anything.'
+      `the detector recorded no trail for ${deliveryId} (HTTP 409). Either no ` +
+      'position update reached it, or scoring is not wired into ' +
+      'DeliveryService.updateCourierLocation.'
     );
   }
-  return list;
-}
-
-function redisList(key) {
-  const { execSync } = require('child_process');
-  let out;
-  try {
-    out = execSync(
-      `docker exec delivery_redis redis-cli LRANGE "${key}" 0 -1`,
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-  } catch (e) {
-    return null;
+  if (!r.ok) {
+    throw new Error(`could not read the fraud trail: HTTP ${r.status}`);
   }
-  return out
-    .split('\n')
-    .filter((l) => l.trim())
-    .map((l) => {
-      try {
-        return JSON.parse(l);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
+  return (await r.json()).points;
 }
 
 main().catch((e) => {

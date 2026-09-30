@@ -8,6 +8,7 @@ import com.delivery.backend.modules.delivery.dto.DeliveryRequest;
 import com.delivery.backend.modules.delivery.dto.DeliveryResponse;
 import com.delivery.backend.modules.notification.NotificationService;
 import com.delivery.backend.modules.ai.TrajectoryFraudService;
+import com.delivery.backend.modules.ai.FraudTrailStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +23,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.Duration;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,8 +49,9 @@ public class DeliveryService {
     private final RouteOptimizationService routeOptimizationService;
     private final PricingService pricingService;
     private final TrajectoryFraudService trajectoryFraudService;
+    private final FraudTrailStore fraudTrailStore;
 
-    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService) {
+    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore) {
         this.deliveryRepository = deliveryRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
@@ -60,6 +61,7 @@ public class DeliveryService {
         this.routeOptimizationService = routeOptimizationService;
         this.pricingService = pricingService;
         this.trajectoryFraudService = trajectoryFraudService;
+        this.fraudTrailStore = fraudTrailStore;
     }
 
     public void updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
@@ -113,15 +115,10 @@ public class DeliveryService {
                 latitude, longitude,
                 delivery.getDropoffLat(), delivery.getDropoffLng());
 
-        // Every fix's score is retained so the admin panel can show the trajectory,
-        // not just the final verdict.
-        redisTemplate.opsForList().leftPush(
-                "fraude:score:" + delivery.getId(),
-                String.format(Locale.ROOT, "{\"at\":%d,\"score\":%.4f,\"fraud\":%b,"
-                        + "\"speed\":%.2f,\"stall\":%.0f,\"dist\":%.0f}",
-                        System.currentTimeMillis(), verdict.score(), verdict.fraud(),
-                        verdict.speedMps(), verdict.stallSeconds(), verdict.distanceToTargetM()));
-        redisTemplate.expire("fraude:score:" + delivery.getId(), Duration.ofHours(6));
+        // Every fix's score is retained, not only the flagged ones, so the admin
+        // panel can show the trajectory instead of a bare yes/no. The trail
+        // never throws: a lost trail is cheaper than a lost alert.
+        fraudTrailStore.record(delivery.getId(), verdict);
 
         if (!verdict.shouldNotify()) {
             return;

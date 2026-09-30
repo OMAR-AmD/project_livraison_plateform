@@ -1,5 +1,6 @@
 package com.delivery.backend.modules.delivery;
 
+import com.delivery.backend.modules.ai.FraudTrailStore;
 import com.delivery.backend.modules.delivery.dto.CourierAssignmentRequest;
 import com.delivery.backend.modules.delivery.dto.DeliveryResponse;
 import jakarta.validation.Valid;
@@ -15,10 +16,12 @@ public class AdminDeliveryController {
 
     private final DeliveryService deliveryService;
     private final RouteOptimizationService routeOptimizationService;
+    private final FraudTrailStore fraudTrailStore;
 
-    public AdminDeliveryController(DeliveryService deliveryService, RouteOptimizationService routeOptimizationService) {
+    public AdminDeliveryController(DeliveryService deliveryService, RouteOptimizationService routeOptimizationService, FraudTrailStore fraudTrailStore) {
         this.deliveryService = deliveryService;
         this.routeOptimizationService = routeOptimizationService;
+        this.fraudTrailStore = fraudTrailStore;
     }
 
     @GetMapping
@@ -92,5 +95,41 @@ public class AdminDeliveryController {
     @GetMapping("/activities")
     public ResponseEntity<List<DeliveryService.AdminActivityDTO>> getAdminActivities() {
         return ResponseEntity.ok(deliveryService.getAdminActivities());
+    }
+
+    /**
+     * Badge « trajectoire suspecte » pour chaque livraison encore en mémoire.
+     *
+     * <p>Exposé pour que le modèle soit visible dans le produit et pas seulement
+     * dans les logs : sans cette lecture, la détection n'existe que pour le
+     * client qui reçoit l'avertissement, et un superviseur n'a aucun moyen de la
+     * voir avant qu'elle ne coûte cher.
+     *
+     * <p>Une seule requête pour tout le tableau de bord, pas une par ligne :
+     * la liste se rafraîchit toutes les 10 s.
+     *
+     * @return un résumé par livraison scorée, vide si rien ne l'a été
+     */
+    @GetMapping("/fraud-trails")
+    public ResponseEntity<List<FraudTrailStore.Summary>> getFraudTrailSummaries() {
+        return ResponseEntity.ok(fraudTrailStore.allTrails().stream()
+                .map(FraudTrailStore.Trail::summary)
+                .toList());
+    }
+
+    /**
+     * La courbe complète d'une livraison : un point par broadcast de position.
+     *
+     * <p>409 si la livraison n'a jamais été scorée, ce qui est la réponse
+     * honnête — un tableau de bord qui afficherait une courbe plate pour une
+     * livraison que le modèle n'a jamais vue ferait croire à une mesure.
+     */
+    @GetMapping("/{id}/fraud-trail")
+    public ResponseEntity<FraudTrailStore.Trail> getFraudTrail(@PathVariable UUID id) {
+        FraudTrailStore.Trail trail = fraudTrailStore.trail(id);
+        if (trail == null) {
+            return ResponseEntity.status(409).build();
+        }
+        return ResponseEntity.ok(trail);
     }
 }

@@ -322,4 +322,27 @@ export async function adminGetActivities() {
   return apiFetch('/admin/deliveries/activities');
 }
 
+/**
+ * One summary per delivery the trajectory model has scored, for the admin
+ * dashboard's risk tag.
+ *
+ * @throws {ApiError} when the monitor is unreachable. That rejection is the
+ *   point: the caller must be able to tell "scored, nothing suspicious" from
+ *   "could not ask", and an empty array looks identical to both.
+ */
+export async function adminGetFraudTrails() {
+  return apiFetch('/admin/deliveries/fraud-trails');
+}
+
+/**
+ * The full per-fix score series for one delivery.
+ *
+ * Rejects with status 409 when the model has never scored it — a delivery that
+ * was never driven has no trajectory, and inventing a flat line would be a
+ * chart of nothing.
+ */
+export async function adminGetFraudTrail(deliveryId) {
+  return apiFetch(`/admin/deliveries/${deliveryId}/fraud-trail`);
+}
+
 export { apiFetch, ApiError };

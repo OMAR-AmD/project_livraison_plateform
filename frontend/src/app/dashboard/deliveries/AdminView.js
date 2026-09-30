@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { adminGetDeliveries, adminGetCouriers, adminAssignCourier, adminDeleteDelivery, adminUpdateDeliveryStatus, adminUnassignCourier } from '@/lib/api';
+import { adminGetDeliveries, adminGetCouriers, adminAssignCourier, adminDeleteDelivery, adminUpdateDeliveryStatus, adminUnassignCourier, adminGetFraudTrails, adminGetFraudTrail } from '@/lib/api';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/Toast';
 import dynamic from 'next/dynamic';
@@ -12,11 +12,25 @@ const AdminMap = dynamic(() => import('@/components/AdminMap'), {
 
 import { StatusPill, PaymentTag } from '@/components/StatusPill';
 import EmptyState, { EmptyIcons } from '@/components/EmptyState';
+import FraudTag from '@/components/FraudTag';
+import FraudTrailModal from '@/components/FraudTrailModal';
 
 export default function AdminView() {
   const [deliveries, setDeliveries] = useState([]);
   const [couriers, setCouriers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Risk tags, keyed by delivery id. `trailError` is tracked separately from
+  // the data itself: a monitor that cannot be reached must not render as a
+  // fleet with no anomalies, so its absence is an error banner, not an empty
+  // object.
+  const [trails, setTrails] = useState({});
+  const [trailError, setTrailError] = useState(null);
+
+  const [trailDelivery, setTrailDelivery] = useState(null);
+  const [fullTrail, setFullTrail] = useState(null);
+  const [trailLoading, setTrailLoading] = useState(false);
+  const [trailLoadError, setTrailLoadError] = useState(null);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState(null);
@@ -56,6 +70,16 @@ export default function AdminView() {
     } finally {
       setLoading(false);
     }
+    // Fetched separately on purpose. If this shares the Promise.all above, one
+    // unreachable Redis takes down the whole order list, and a monitoring panel
+    // is not worth losing the dispatcher UI over.
+    try {
+      const summaries = await adminGetFraudTrails();
+      setTrails(Object.fromEntries((summaries || []).map((s) => [s.deliveryId, s])));
+      setTrailError(null);
+    } catch (err) {
+      setTrailError(err.message || 'the trajectory monitor is unreachable');
+    }
   };
 
   const openAssignModal = (delivery) => {
@@ -64,6 +88,23 @@ export default function AdminView() {
     // than an unassign in disguise.
     setSelectedCourier(delivery.courierId || '');
     setIsModalOpen(true);
+  };
+
+  const openTrailModal = async (delivery) => {
+    setTrailDelivery(delivery);
+    setFullTrail(null);
+    setTrailLoadError(null);
+    setTrailLoading(true);
+    try {
+      setFullTrail(await adminGetFraudTrail(delivery.id));
+    } catch (err) {
+      // 409 means the model never scored this delivery. That is information,
+      // not a failure: the modal renders its own explanation instead of a curve.
+      setTrailLoadError(err.status === 409 ? null : (err.message || 'unreadable'));
+      if (err.status === 409) setFullTrail({ points: [] });
+    } finally {
+      setTrailLoading(false);
+    }
   };
 
   const handleAssign = async (e) => {
@@ -158,6 +199,21 @@ export default function AdminView() {
             />
           ) : (
             <>
+              {/* An unreachable monitor is an error, not an absence. Without
+                  this the table would simply show no risk tags and read as a
+                  clean fleet, which is the one conclusion this panel must never
+                  draw on its own. */}
+              {trailError && (
+                <p
+                  role="alert"
+                  className="mb-4 rounded-md border border-danger-500/25 bg-danger-500/10 px-3.5 py-2.5 text-sm text-danger-300"
+                >
+                  Trajectory monitoring is unavailable: {trailError}. Risk tags
+                  below are missing because nothing was measured, not because
+                  nothing was found.
+                </p>
+              )}
+
               {/* Desktop table */}
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full border-collapse text-left">
@@ -194,8 +250,9 @@ export default function AdminView() {
                         </td>
                         <td className="table-cell">
                           <StatusPill status={d.status} />
-                          <div className="mt-1">
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
                             <PaymentTag paymentStatus={d.paymentStatus} />
+                            <FraudTag trail={trails[d.id]} onOpen={() => openTrailModal(d)} />
                           </div>
                         </td>
                         <td className="table-cell text-right font-semibold text-content tabular">
@@ -279,6 +336,7 @@ export default function AdminView() {
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       <StatusPill status={d.status} />
                       <PaymentTag paymentStatus={d.paymentStatus} />
+                      <FraudTag trail={trails[d.id]} onOpen={() => openTrailModal(d)} />
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -319,6 +377,16 @@ export default function AdminView() {
           )}
         </div>
       </section>
+
+      <FraudTrailModal
+        isOpen={!!trailDelivery}
+        onClose={() => setTrailDelivery(null)}
+        delivery={trailDelivery}
+        trail={trailDelivery ? trails[trailDelivery.id] : null}
+        fullTrail={fullTrail}
+        loading={trailLoading}
+        error={trailLoadError}
+      />
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Assign courier">
         <form onSubmit={handleAssign} className="space-y-5">
