@@ -1,0 +1,16 @@
+# Keep the build context small and, more importantly, free of anything that
+# would change the image for a reason unrelated to the source.
+#
+# target/ is the decisive one. Without it, every local `mvn package` ships the
+# previous build's classes into the context, and the `COPY src ./src` layer
+# looks unchanged so Docker reuses a cached layer that is in fact stale.
+
+target/
+.mvn/wrapper/maven-wrapper.jar
+*.log
+.env
+.env.local
+
+# Nothing here is read by the image, and some of it should not leave the machine.
+Dockerfile
+.dockerignore

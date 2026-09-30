@@ -8,6 +8,13 @@ const BACKEND = process.env.BACKEND_URL || 'http://localhost:8080';
 const OSRM = process.env.OSRM_URL || 'http://localhost:5000';
 
 const nextConfig = {
+  // Emits .next/standalone with only the modules actually imported, plus a
+  // ready-to-run server.js. This is what lets the runtime image skip `npm ci`
+  // entirely and stay around 150 MB instead of carrying node_modules and the
+  // whole build toolchain. It only affects `next build`; `next dev` is
+  // unchanged, so local development is unaffected.
+  output: 'standalone',
+
   async rewrites() {
     return [
       {

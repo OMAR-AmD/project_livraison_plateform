@@ -1,0 +1,24 @@
+# Keep the build context to the files the build actually reads.
+
+# Decisive: without this, the host's node_modules (~500 MB, platform-specific
+# binaries) is sent to the daemon on every build. Worse, `COPY . .` after the
+# deps stage would overwrite the container's freshly installed Linux
+# node_modules with the host's Windows one, and `next build` would fail on a
+# native binary that cannot load on this platform.
+node_modules
+.next
+out
+build
+
+# Local environment files must never enter the image. NEXT_PUBLIC_* values are
+# inlined at build time, so a leaked .env.production.local would be baked into
+# the JavaScript bundle and served to every visitor.
+.env
+.env.local
+.env.*.local
+
+*.log
+npm-debug.log*
+
+Dockerfile
+.dockerignore

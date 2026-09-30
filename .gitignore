@@ -43,8 +43,13 @@ backend/.gradle/
 
 # Node modules
 frontend/node_modules/
-frontend/package-lock.json
 frontend/yarn.lock
+
+# package-lock.json is deliberately NOT ignored, despite being the convention
+# for a library. This is an application: the lockfile pins the exact dependency
+# tree that CI (npm ci), the Dockerfile (npm ci) and every teammate install, so
+# the three cannot drift. Ignoring it here would mean a fresh clone has no
+# lockfile and `npm ci` fails outright rather than resolving something new.
 
 # Next.js
 frontend/.next/

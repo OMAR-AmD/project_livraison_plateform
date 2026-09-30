@@ -1,4 +1,19 @@
-version: '3.8'
+# Full stack: the three infrastructure services plus the two applications.
+#
+# The infrastructure half (postgres, redis, osrm) is what a local run needs and
+# was already here. The application half is the part that was missing: the
+# backend and the frontend could only be started by hand from a Maven shell and
+# a `npm run dev`, which is fine on one machine and is not what "run it with
+# Docker" means.
+#
+# START IT
+#   cp .env.example .env      then put a real JWT_SECRET_KEY in it
+#   docker compose up --build
+#
+# The .env file is read automatically. The `${VAR:?message}` form is deliberate:
+# compose refuses to start with a clear message rather than substituting an
+# empty value, because an application that boots with an empty signing key looks
+# identical to one that boots correctly until someone forges an admin token.
 
 services:
   # ----------------------------------------
@@ -17,9 +32,19 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      # pg_isready is the only reliable readiness signal for postgres. A TCP
+      # connect succeeds while the server is still in crash recovery and refuses
+      # queries, so depending on the port alone produces a backend that starts,
+      # fails to get a connection, and then never retries.
+      test: ["CMD-SHELL", "pg_isready -U admin -d delivery_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   # ----------------------------------------
-  # Redis (Cache & Real-time WebSockets)
+  # Redis (Cache, live positions, fraud trails)
   # ----------------------------------------
   redis:
     image: redis:7
@@ -29,10 +54,24 @@ services:
       - "6379:6379"
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # ----------------------------------------
   # OSRM (Routing Engine)
   # ----------------------------------------
+  # Not a startup dependency, and what that actually costs is worth being
+  # precise about. The application boots and serves fine without it, and every
+  # other feature works. What does not work is auto-dispatch: the per-courier
+  # route optimisation throws, the dispatcher logs a warning for each candidate,
+  # finds nobody it can assign, and the order stays PENDING until an admin
+  # assigns it by hand. That is a deliberate trade -- requiring OSRM would mean
+  # the platform cannot start on a machine that has not downloaded a map
+  # extract, which is most of them -- but "degrades gracefully" would
+  # overstate it: it degrades to manual dispatch, not to straight-line estimates.
   osrm:
     image: osrm/osrm-backend
     container_name: delivery_osrm
@@ -42,6 +81,96 @@ services:
     volumes:
       - ./osrm-data:/data
     command: osrm-routed --algorithm mld /data/map.osrm
+
+  # ----------------------------------------
+  # Backend (Spring Boot + the trajectory fraud model)
+  # ----------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Named explicitly. Without this, compose derives the tag from the project
+    # directory, producing `plateforme-livraison-feature-ui-fixes-and-revenue-
+    # logic-backend:latest` -- technically valid, and impossible to type.
+    image: swiftdeliver/backend:latest
+    container_name: delivery_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Service names, not localhost. Inside a container, localhost is the
+      # container itself, so this is the single most common way a compose file
+      # that "works" locally can still fail to connect in a stack.
+      DB_NAME: delivery_db
+      DB_USERNAME: admin
+      DB_PASSWORD: password123
+      # The host has to be set explicitly. This one was not obvious: the Spring
+      # config kept `localhost` hardcoded in the JDBC URL, so the container spent
+      # its startup retrying a Postgres on its own loopback address -- healthy,
+      # two services away, and never contacted. Nothing about the failure said
+      # "wrong hostname"; it just said "connection refused".
+      DB_HOST: postgres
+      # Same story, different service. Redis had no host entry at all in
+      # application.yml, so it silently stayed on Spring's localhost default and
+      # auto-dispatch died with RedisConnectionFailureException on every paid
+      # order -- orders then sit PENDING and the fraud panel is empty rather than
+      # broken, which is about the worst way for that to fail.
+      REDIS_HOST: redis
+      # Refuses to start the stack with no key, naming the variable to set.
+      # Quoted because the message contains colons, which YAML would otherwise
+      # read as a mapping -- and the resulting error points at the wrong line.
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env - generate with openssl rand -hex 32}"
+      OSRM_BASE_URL: http://osrm:5000
+      SPRING_PROFILES_ACTIVE: demo
+    ports:
+      # Published so a phone on the same network can reach the API during a
+      # demo. Remove this line for anything internet-facing: the frontend's
+      # Next.js origin already proxies /api, so nothing needs the backend
+      # exposed once a reverse proxy or platform routes is in front.
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS --max-time 4 -o /dev/null http://localhost:8080/api/v1/auth/login || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      # Generous: first boot is JPA schema creation plus loading the fraud
+      # model, and a short start period would let Docker's own retries expire
+      # and mark a perfectly healthy container unhealthy.
+      start_period: 120s
+
+  # ----------------------------------------
+  # Frontend (Next.js standalone)
+  # ----------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Rewrites are inlined into the server bundle at build time, so these
+        # are build arguments rather than runtime environment variables.
+        BACKEND_URL: http://backend:8080
+        OSRM_URL: http://osrm:5000
+    image: swiftdeliver/frontend:latest
+    container_name: delivery_frontend
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      # 127.0.0.1 rather than localhost: on the Alpine base, `localhost`
+      # resolves to ::1 first, next-server binds IPv4 only, and BusyBox wget
+      # gives up on the refused ::1 attempt. The symptom is a container that
+      # answers 200s from the host and calls itself unhealthy.
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:3000/login || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
 # ----------------------------------------
 # Persistent Storage Volumes
