@@ -147,6 +147,9 @@ otherwise, including when the delivery belongs to another client.
 ### `GET /client/deliveries/{id}/location`
 Last broadcast courier position, read from Redis. Returns `404` once the key has
 expired (30-second TTL), which is how the client detects that tracking stopped.
+Ownership is checked: a delivery belonging to another client answers exactly as
+one that does not exist, so the endpoint cannot be used to test whether a
+guessed delivery id is real.
 
 ### `POST /client/deliveries/{id}/rate`
 Rates a delivered order (`rating` 1–5, optional `reviewComment`). Rejected if
@@ -256,6 +259,25 @@ orders via `DELETE /client/deliveries/{id}`.)
 
 ### `GET /admin/deliveries/{id}/location`
 Last known courier position for oversight. `204` if expired.
+
+### `GET /admin/deliveries/{id}/proof`
+Re-derives the delivery's seal from the stored row and reports whether it still
+holds. The seal is an HMAC-SHA256 computed under a key derived from the server
+secret when the courier confirmed delivery, so neither the client nor the
+courier can recompute it — which is what makes it evidence rather than a checksum.
+
+```json
+{
+  "verified": true, "verifiable": true,
+  "deliveredAt": "2026-09-30T22:52:49.863559",
+  "deliveredLat": 33.5891, "deliveredLng": -7.6311,
+  "distanceM": 0, "proof": "680d34d3…"
+}
+```
+
+`verified` is the result of re-deriving the seal now, not a stored flag.
+Returns `409` when the delivery was never sealed, rather than `200` with
+`verified: false`: an unsealed delivery is not a forged one.
 
 ### `GET /admin/deliveries/couriers/{courierId}/route?lat=..&lng=..`
 The optimised round for one courier, same solver as the courier endpoint.

@@ -4,83 +4,157 @@
 \usepackage[french]{babel}
 \usepackage{lmodern}
 \usepackage{geometry}
-\geometry{margin=2.5cm}
 \usepackage{enumitem}
 \usepackage{hyperref}
 
-\title{\textbf{Preuve de livraison et d\'etection d'anomalies de trajectoire\\ \large Argumentaire d'innovation -- SwiftDeliver}}
+\geometry{margin=2.3cm}
+
+\title{\textbf{Socle industriel et innovation\\[0.3em]
+\large D\'etection de fraude de trajectoire par apprentissage automatique,\\ coupl\'ee \`a la cybers\'ecurit\'e\\[0.4em]
+\normalsize Argumentaire v\'erifiable -- SwiftDeliver}}
 \author{Projet SwiftDeliver -- plateforme de livraison}
 \date{\today}
 
 \begin{document}
 \maketitle
 
-\section{Pourquoi la s\'ecurit\'e}
-SwiftDeliver manipule des adresses clients, des positions GPS en temps r\'eel, des paiements et trois niveaux de privil\`eges, avec un assistant conversationnel outill\'e capable d'annuler une livraison. La fraude logistique moderne (GPS falsifi\'e, fausse livraison, r\'epudiation) est un probl\`eme de donn\'ees comportementales, pas d'attaque r\'eseau classique : c'est ce qui rend l'axe s\'ecurit\'e pertinent pour un profil Data/IA.
+\noindent
+\textbf{Comment lire ce document.} Il a deux parties : le socle attendu par la grille, puis l'innovation. Chaque affirmation porte un statut : \textbf{[F]} fait et v\'erifi\'e par un test ou un script ex\'ecutable ; \textbf{[P]} pr\'evu, non impl\'ement\'e \`a ce jour ; \textbf{[L]} limite connue et assum\'ee. Aucune ligne n'est \textbf{[F]} sans un test reproductible, et la commande qui le reproduit est donn\'ee. C'est la r\`egle qui rend ce document utile : il peut \^etre contredit en l'ex\'ecutant.
 
-Les autres axes ont \'et\'e \'ecart\'es pour des raisons v\'erifiables : le moteur OSRM ($\sim$820 Mo RAM, 1,7 Go de donn\'ees) exclut les offres Cloud gratuites ; il n'existe aucun capteur ni protocole IoT dans le syst\`eme ; le frontend est responsive mais sans PWA ni notifications push. La s\'ecurit\'e est le seul axe avec du code existant et une extension d\'emontrable en local \`a co\^ut z\'ero.
+\section{Ce que la grille demande}
+Le socle attendu est l'\emph{industrialisation} (Docker, CI/CD, Cloud public), la \emph{s\'ecurit\'e standard} (JWT, RBAC, variables d'environnement masqu\'ees, hachage des mots de passe, validation des entr\'ees) et la \emph{robustesse} (refactorisation de l'existant, UX sans plantage). L'innovation doit \emph{transformer l'usage du produit par un composant d'intelligence artificielle}, coupl\'e au domaine technique secondaire.
 
-\section{Mod\`ele de menaces}
-Statuts : \textbf{F}ait (couvert par un test automatis\'e uniquement), \textbf{P}r\'evu, \textbf{L}imite connue. R\`egle : rien n'est marqu\'e F sans test.
+\section{Socle industriel -- livr\'e}
 
-\begin{tabular}{|p{3.0cm}|p{4.0cm}|p{4.7cm}|c|}
+\begin{tabular}{|p{2.7cm}|p{7.2cm}|p{4.8cm}|}
 \hline
-\textbf{Actif} & \textbf{Menace} & \textbf{Contr\^ole} & \textbf{Statut} \\
+\textbf{Axe} & \textbf{Ce qui est livr\'e} & \textbf{Preuve ex\'ecutable} \\
 \hline
-R\^ole utilisateur & \'El\'evation de privil\`eges \`a l'inscription & Refus de \texttt{ADMIN}, r\^oles rout\'es par \texttt{SecurityConfig} & F \\
+Docker &
+Deux images multi-\'etages (\texttt{backend/Dockerfile}, \texttt{frontend/Dockerfile})~; \texttt{docker-compose.yml} d\'eclare cinq services (backend, frontend, PostgreSQL/pgvector, Redis, OSRM) avec points de sant\'e et d\'emarrage ordonn\'e. &
+\texttt{docker compose up -d -{}-build} puis \texttt{docker compose ps}~: les cinq services passent \emph{healthy}. \\
 \hline
-Tarif & Falsification du prix c\^ot\'e client & Prix calcul\'e serveur depuis la route OSRM & F \\
+CI/CD &
+\texttt{.github/workflows/ci.yml}, trois t\^aches~: tests et packaging du backend, lint et build du frontend, et une t\^ache \emph{images} qui construit les deux images et y v\'erifie des propri\'et\'es r\'eelles (mod\`ele d'IA pr\'esent, refus de d\'emarrer sans cl\'e de signature, connexion \`a une vraie base, endpoint de sant\'e). &
+La t\^ache \emph{images} \'echoue si le mod\`ele dispara\^it de l'image~: c'est elle, et non la compilation, qui prouve que la plateforme est livrable. \\
 \hline
-Capacit\'e livreurs & Commande impay\'ee occupant un livreur & Dispatch coupl\'e \`a la capture du paiement & F \\
+Cloud public &
+\texttt{render.yaml}~: blueprint Render en offre gratuite (PostgreSQL 15, Key Value, deux services web Docker, r\'egion Francfort). \texttt{DEPLOY.md} d\'ecrit la proc\'edure et les limites de l'offre. &
+\texttt{python scripts/check\_render\_blueprint.py render.yaml} v\'erifie en CI la coh\'erence interne (chaque variable pointe vers un service d\'eclar\'e). Sch\'ema complet~: \texttt{python scripts/validate\_render\_blueprint.py render.yaml}. \\
 \hline
-Position d'autrui & IDOR : un client suit la livraison d'un autre via \texttt{GET /location}, SSE ou WebSocket & Contr\^ole de propri\'et\'e sur chaque acc\`es position (audit des endpoints existants \textbf{avant} le Sprint~2) & P \\
+S\'ecurit\'e standard &
+JWT HS256 dont la cl\'e \emph{n'a aucune valeur par d\'efaut} (l'application refuse de d\'emarrer sans elle)~; RBAC par pr\'efixe de route (\texttt{SecurityConfig})~; secrets uniquement en variables d'environnement (\texttt{.env} ignor\'e, \texttt{.env.example} fourni)~; mots de passe hach\'es en BCrypt~; validation Bean des entr\'ees~; r\'eponses construites en DTO, jamais l'entit\'e \texttt{User}. &
+\texttt{JwtServiceTest}~; \texttt{HealthEndpointTest} v\'erifie que \emph{seul} \texttt{/api/v1/health} est public~; la CI prouve qu'un conteneur sans cl\'e de signature refuse de d\'emarrer. \\
 \hline
-Commande d'autrui via chatbot & Injection de prompt sur l'assistant outill\'e & Outil li\'e \`a l'appelant authentifi\'e + confirmation explicite avant annulation ; jeu d'attaques class\'e OWASP LLM & P \\
-\hline
-Compte & Force brute sur \texttt{/auth/login} & Rate limiting Redis + backoff & P \\
-\hline
-Session et r\^oles & Token vol\'e valide 24~h ; r\^ole r\'evoqu\'e conserv\'e 24~h & \texttt{tokenVersion} par utilisateur, v\'erifi\'e \`a chaque requ\^ete & P \\
-\hline
-Livraison & Fausse livraison \`a distance, r\'epudiation & Sceau HMAC + seuil 500~m + OTP client (Sprint~1) & P \\
-\hline
-OTP & Devinette (10\,000 combinaisons \`a 4 chiffres) & Tentatives limit\'ees + expiration courte (le vrai contr\^ole) ; stockage en HMAC \`a cl\'e serveur, jamais en hash simple & P \\
-\hline
-Trajectoire & D\'etour, arr\^et suspect, GPS falsifi\'e & Garde-fou vs polyline OSRM (Sprint~2) & P \\
-\hline
-Historique & Falsification des preuves en base & Cha\^\i nage des sceaux \textbf{par livreur}, ancrage p\'eriodique du dernier hash \textbf{hors base} (fichier append-only ou valeur report\'ee dans le rapport : un ancrage dans la m\^eme base ne prot\`ege de rien) & P \\
-\hline
-Sortie de secours & Livreur l'utilisant syst\'ematiquement & Compteur d'usage par livreur, alerte au-del\`a d'un seuil (m\'etrique du protocole) & P \\
-\hline
-Donn\'ees personnelles & Positions et adresses (RGPD / loi 09-08) & Minimisation, dur\'ees de conservation, acc\`es restreint & L \\
-\hline
-Remise \`a deux & Collusion client-livreur (OTP partag\'e volontairement) & Aucun contr\^ole technique ; d\'etection a posteriori via motifs (m\^eme couple, m\^eme lieu) & L \\
-\hline
-Absence des deux parties & Livreur et client absents : OTP et secours en tension & Proc\'edure d\'efinie (retour d\'ep\^ot, replanification), tra\c cabilit\'e du cas & L \\
-\hline
-Validation externe & GeoLife (traces chinoises) ne valide que le bruit GPS, pas la comparaison \`a la polyline marocaine & Limite \'ecrite dans le protocole de mesure & L \\
+Robustesse &
+\texttt{GlobalExceptionHandler} s\'epare les erreurs du client des pannes serveur~: validation, corps illisible, param\`etre manquant et type de chemin incorrect renvoient 400~; route inconnue, 404~; verbe incorrect, 405~; d\'ependance aval indisponible, 503. &
+\texttt{MalformedRequestTest} (4 cas)~; \texttt{verify\_pages.js} et \texttt{verify\_stats.js} v\'erifient qu'aucune page ne pr\'esente de texte de plantage ni d'erreur non captur\'ee. \\
 \hline
 \end{tabular}
 
-Mod\`ele d'attaquant : le HMAC prot\`ege contre un attaquant avec acc\`es \`a la base \textbf{sans} la cl\'e serveur, pas contre un attaquant poss\'edant les deux. Le GPS reste d\'eclaratif : la d\'emo utilise une simulation assum\'ee.
+\medskip
+\noindent
+\textbf{Statut du d\'eploiement public.} Le blueprint est \'ecrit et valid\'e, mais il n'est pas encore appliqu\'e sur un compte~: c'est une action c\^ot\'e \'etudiant (Render $\rightarrow$ New $\rightarrow$ Blueprint $\rightarrow$ d\'esigner le d\'ep\^ot). Tant qu'elle n'est pas faite, aucune URL publique n'existe. Ce document ne pr\'etend donc pas \`a une plateforme en ligne~: il pr\'etend que la plateforme d\'emarre \`a l'identique, sans modification, sur une offre gratuite.
 
-\section{Ce qui sera livr\'e (p\'erim\`etre ferm\'e)}
-\textbf{Sprint~1 -- Preuve de livraison scell\'ee.} \`A chaque passage \`a DELIVERED : position exig\'ee (Redis en priorit\'e, fra\^\i cheur TTL 30~s contr\^ol\'ee, refus si divergence avec la requ\^ete), distance Haversine contre la destination avec refus au-del\`a de 500~m (seuil configurable), sceau \textbf{HMAC-SHA256} \`a cl\'e serveur couvrant (commande, livreur, client, position, horodatage), \textbf{cha\^\i nage par livreur} avec ancrage, \textbf{OTP 4--6 chiffres} g\'en\'er\'e \`a \texttt{IN\_TRANSIT} et saisi par le livreur. Sortie de secours : signalement avec validation admin trac\'ee.
+\section{Innovation~: d\'etection de fraude par IA, coupl\'ee \`a la cybers\'ecurit\'e}
 
-\textbf{Sprint~2 -- Garde-fou de trajectoire livr\'e.} Comparaison de la position courante \`a la polyline OSRM dans le backend Java existant, seuils de d\'eviation et d'arr\^et, alertes.
+\subsection{Le probl\`eme, et pourquoi une r\`egle ne suffit pas}
+Le GPS d'un t\'el\'ephone est \emph{d\'eclaratif}~: un livreur peut signaler une position qu'il n'occupe pas. Deux cons\'equences pour la plateforme. D'abord, une livraison peut \^etre \og{}confirm\'ee\fg{} depuis l'autre bout de la ville. Ensuite, et c'est le point int\'eressant, la fraude logistique n'est pas une attaque r\'eseau~: c'est un \emph{comportement} dans le temps. Un contr\^ole na\"if (distance $>$ 500~m $\rightarrow$ alerte) arrive trop tard, quand la livraison est d\'ej\`a termin\'ee, et il crie au loup pour un livreur bloqu\'e dans le trafic \`a 600~m de sa cible.
 
-\textbf{Durcissement.} Audit IDOR des endpoints existants d'abord, rate limiting du login, \texttt{tokenVersion}, jeu de 20--30 attaques chatbot class\'ees OWASP Top~10 for LLM, CI s\'ecurit\'e (Trivy/gitleaks), \'etat de l'art court.
+\subsection{Ce que fait le composant dans le produit \textbf{[F]}}
+\`A chaque diffusion de position, le backend calcule huit variables de mouvement et les note avec une for\^et al\'eatoire. Au-del\`a d'un seuil, une alerte est cr\'e\'ee et affich\'ee dans le tableau de bord administrateur, avec la courbe de score de la livraison. Une alerte \emph{ne bloque pas} le livreur~: elle le signale \`a l'humain qui d\'ecide. Le client, lui, ne voit pas la suspicion du mod\`ele~: il voit que sa preuve de livraison est en cours de v\'erification, ce qui est l'information dont il a besoin.
 
-Le RLS PostgreSQL est hors p\'erim\`etre : incompatible avec le pool JPA mono-utilisateur sans refonte.
+Les huit variables sont~: \texttt{speed\_mps}, \texttt{accel\_mps2}, \texttt{dist\_to\_target\_m}, \texttt{progress\_ratio}, \texttt{heading\_change\_deg}, \texttt{target\_bearing\_err}, \texttt{stall\_seconds}, \texttt{progress\_rate}. Elles sont d\'efinies dans \texttt{ml/train\_trajectory\_anomaly.py} et \emph{recalcul\'ees \`a l'identique} en Java~: un test de parit\'e compare 200 vecteurs aux probabilit\'es de scikit-learn, avec une tol\'erance de $10^{-6}$.
 
-\section{Protocole de mesure}
-Calibration et test s\'epar\'es : les seuils sont r\'egl\'es sur un jeu, \'evalu\'es sur un autre. Mod\`ele de bruit GPS justifi\'e (plus fort en ville), validation possible sur traces r\'eelles publiques (GeoLife). Mesures : taux de faux refus du seuil 500~m ; surco\^ut de latence du scellement ; pr\'ecision/rappel du garde-fou ; attaques chatbot en 20--30 cas pr\'esent\'es comme un petit \'echantillon. Pour le chatbot, deux mesures distinctes : r\'eussite \textbf{au niveau du mod\`ele} (probabiliste, Llama~1B fragile) vs \textbf{action ex\'ecut\'ee} (d\'eterministe, contr\^ol\'ee serveur) -- la seconde doit tomber \`a z\'ero, c'est l'argument central.
+\subsection{Formation hors ligne, inf\'erence dans le produit \textbf{[F]}}
+Le mod\`ele est entra\^in\'e hors ligne par \texttt{ml/train\_fraud\_model.py}, export\'e en JSON compress\'e (316~Ko, 60 arbres de profondeur 12), et charg\'e au d\'emarrage par le backend Java qui l'\'evalue en m\'emoire. Ce d\'ecoupage est d\'elib\'er\'e~: une seule JVM, un seul artefact \`a d\'eployer. Un microservice d'inf\'erence s\'epar\'e doublerait la surface \`a exploiter pour un mod\`ele de 316~Ko. Le chargement du mod\`ele est obligatoire~: si le fichier manque ou ne se parse pas, l'application refuse de d\'emarrer, et l'endpoint de sant\'e indique le nombre d'arbres effectivement charg\'es.
 
-\textbf{Volet data (fili\`ere Data/IA).} Le garde-fou \`a r\`egles sert de baseline ; un notebook Python hors ligne en extrait quelques variables (\'ecart \`a la polyline, dur\'ee d'arr\^et, \'ecart de dur\'ee vs OSRM) et compare un mod\`ele simple (Isolation Forest ou r\'egression logistique) \`a la baseline, pr\'ecision/rappel c\^ote \`a c\^ote. Pas de microservice, pas de d\'eploiement ; les heures sont prises sur le poste mesures, que le notebook sert aussi \`a produire.
+\subsection{Pourquoi une for\^et al\'eatoire supervis\'ee, et pas une Isolation Forest}
+La premi\`ere version \'etait une \emph{Isolation Forest}, non supervis\'ee. Elle a \'et\'e construite, mesur\'ee, puis \emph{rejet\'ee}~: au m\^eme budget de fausses alertes, elle ne fait pas mieux qu'un simple seuil \texttt{vitesse $>$ 25~m/s}. Un mod\`ele qu'une r\`egle \'egale n'est pas une innovation. Quatre d\'etecteurs, \`a 2~\% de fausses alertes sur les m\^emes donn\'ees de test~:
 
-\section{Planning 100~h (16~h effectu\'ees, 84~h restantes)}
-Les 16~h couvrent l'audit existant et le d\'ebut du Sprint~1. Reste : audit IDOR + Sprint~1 blind\'e (22~h, sortie de secours minimale : un endpoint, un statut, une ligne de journal), suite adversariale chatbot (12~h), Sprint~2 + journal cha\^\i n\'e (22~h ; si manque de temps, sacrifier l'ancrage ou le notebook, pas le garde-fou), durcissement auth (8~h), mesures + menaces + \'etat de l'art (10~h), \textbf{rapport et soutenance (10~h)}. Total 100~h, z\'ero d\'epense, z\'ero d\'eploiement. Hypoth\`ese : ces 100~h couvrent tout le projet ; sans marge, toute ligne Pr\'evu non livr\'ee est reclass\'ee en limite avant la soutenance.
+\begin{center}
+\begin{tabular}{|l|r|r|r|}
+\hline
+\textbf{D\'etecteur} & \textbf{Pr\'ecision} & \textbf{Rappel} & \textbf{drift\_then\_vanish} \\
+\hline
+R\`egle de vitesse ($>$ 25~m/s) & 0.585 & 0.358 & 35.8~\% \\
+Isolation Forest              & 0.585 & 0.357 & 35.7~\% \\
+R\'egression logistique       & 0.602 & 0.342 & 34.2~\% \\
+\textbf{For\^et al\'eatoire}  & \textbf{0.780} & \textbf{0.896} & \textbf{89.6~\%} \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent
+La colonne \emph{drift\_then\_vanish} est le sc\'enario qui d\'ecide~: une approche d'apparence normale qui s'arr\^ete, puis dispara\^it. La r\`egle de vitesse le voit \`a 35,8~\%, la for\^et \`a 89,6~\%. Deux raisons \`a ce r\'esultat. D'une part, s\'eparer un livreur gar\'e d'un livreur \`a un feu rouge exige une interaction (\og{}toujours loin de la cible \emph{et} plus rien ne bouge\fg{})~: une isolation dans un espace de variables ne l'exprime pas, un arbre supervis\'e oui. D'autre part, le mod\`ele pr\'evient \emph{\`a l'avance}~: 100~\% des courses frauduleuses sont signal\'ees alors qu'il reste au moins 3 positions \`a parcourir, contre 75~\% pour la r\`egle. Une alerte qui tombe en m\^eme temps que la livraison n'est pas une d\'etection, c'est une autopsie.
+
+\subsection{Le couplage avec la cybers\'ecurit\'e \textbf{[F]}}
+Le d\'etecteur signale~; il ne prouve rien. Un signalement est une opinion tant que rien ne permet de trancher. Le second domaine (cybers\'ecurit\'e) fournit l'autre moiti\'e~:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Preuve de livraison scell\'ee.} Passer une livraison \`a \emph{livr\'ee} exige une position GPS fra\^iche \`a moins de 500~m de la destination, puis scelle l'\'ev\'enement sous un HMAC-SHA256 dont la cl\'e n'existe que c\^ot\'e serveur. Un simple SHA-256, qui est l'\`a o\`u ce travail a commenc\'e, ne prouve rien~: les deux parties connaissent les champs scell\'es et peuvent recalculer l'empreinte, et la partie qui conteste la livraison est pr\'ecis\'ement celle qui le ferait. Sous HMAC, la contestation devient v\'erifiable.
+  \item \textbf{Cl\'e d\'eriv\'ee, pas r\'eutilis\'ee.} La cl\'e de scellement est d\'eriv\'ee du secret racine (\texttt{HMAC(racine, "swiftdeliver/delivery-proof/v1")}), donc distincte de la cl\'e de signature des JWT. Un secret unique pour deux usages est un d\'efaut facile \`a manquer.
+  \item \textbf{V\'erification par le produit.} \texttt{GET /api/v1/admin/deliveries/\{id\}/proof} recalcule le sceau depuis la ligne stock\'ee et r\'epond \texttt{verified}~; 409 si la livraison n'a jamais \'et\'e scell\'ee. Un sceau que personne ne peut rev\'erifier n'est qu'une cha\^ine de caract\`eres.
+  \item \textbf{Correction d'un IDOR.} N'importe quel client authentifi\'e pouvait suivre la livraison d'un autre en devinant son identifiant (\texttt{GET /client/deliveries/\{id\}/location}). Le contr\^ole de propri\'et\'e est d\'esormais fait, et \og{}ce n'est pas la v\^otre\fg{} r\'epond la m\^eme chose que \og{}elle n'existe pas\fg{}, pour ne pas offrir un oracle d'existence.
+\end{itemize}
+
+\noindent
+C'est ce couplage qui change l'usage~: le mod\`ele d\'etecte une fraude \emph{pendant} qu'elle se pr\'epare, et le sceau permet de la \emph{trancher} apr\`es coup. Sans le second, le premier n'est qu'un tableau de bord~; sans le premier, le second ne se d\'eclenche qu'une fois le litige n\'e.
+
+\subsection{R\'esultats v\'erifi\'es}
+\begin{itemize}[leftmargin=1.4em]
+  \item Tests backend~: \textbf{50/50} (\texttt{cd backend \&\& ./mvnw test}), dont 9 sur le sceau et 4 sur les erreurs de requ\^ete.
+  \item D\'etection en direct~: \textbf{7/7} (\texttt{node verify\_fraud\_live.js}) --- une trajectoire honn\^ete ferme sans alerte, la m\^eme livraison avec un saut impossible d\'eclenche une alerte. Les deux verdicts doivent diff\'erer~: un d\'etecteur bloqu\'e \`a 0 \'echoue le second, bloqu\'e \`a 1 il \'echoue le premier.
+  \item Panneau de fraude~: \textbf{14/14} (\texttt{node verify\_fraud\_panel.js}), qui v\'erifie aussi que le panneau d\'eclare ses donn\'ees d'entra\^inement comme synth\'etiques.
+  \item Preuve de livraison~: \textbf{23/23} (\texttt{node verify\_proof.js}) --- refus \`a 3~km, refus sans position, scellement \`a la porte via le m\^eme chemin que l'interface, v\'erification du sceau apr\`es un aller-retour en base, et deux livraisons au m\^eme endroit qui ne partagent pas le m\^eme sceau.
+\end{itemize}
+
+\section{Acquis, pr\'evu, et limites assum\'ees}
+
+\begin{tabular}{|p{4.6cm}|p{10.2cm}|c|}
+\hline
+\textbf{Point} & \textbf{\'Etat} & \textbf{Statut} \\
+\hline
+IA dans le produit & For\^et al\'eatoire entra\^in\'ee hors ligne, \'evalu\'ee \`a chaque position dans la JVM, alertes et courbe visibles. & F \\
+\hline
+Preuve de livraison HMAC & Seuil de distance, cl\'e d\'eriv\'ee, sceau v\'erifiable par l'API. & F \\
+\hline
+Correction IDOR & Position d'autrui inaccessible. & F \\
+\hline
+Erreurs client en 500 & Corrig\'e~: corps illisible, param\`etre manquant et mauvais type de chemin renvoient 400. & F \\
+\hline
+Limitation de d\'ebit sur le login & Contre la force brute. Non impl\'ement\'ee~: c'est la principale lacune restante de la partie s\'ecurit\'e. & P \\
+\hline
+R\'evocation de session (\texttt{tokenVersion}) & Un jeton vol\'e reste valide jusqu'\`a expiration. Non impl\'ement\'e. & P \\
+\hline
+Code de remise (OTP) & Confirmation par le client en plus du livreur. Non impl\'ement\'e. & P \\
+\hline
+Cha\^inage des sceaux & Un cha\^inage global exige un ordre total et un point d'ancrage~; en concurrence, il peut se ramifier. Un sceau HMAC honn\^ete vaut mieux qu'un cha\^inage sur-affirm\'e. Report\'e en connaissance de cause. & P \\
+\hline
+Donn\'ees d'entra\^inement & \textbf{Synth\'etiques}~: aucun historique r\'eel de livreur n'existe. Les scores mesurent la validit\'e du pipeline, pas la performance terrain. Le mod\`ele et l'interface le d\'eclarent. & L \\
+\hline
+GPS d\'eclaratif & La position vient du t\'el\'ephone. La d\'emo assume une simulation. & L \\
+\hline
+OSRM sur le Cloud & Le serveur public de d\'emonstration, partag\'e, pas une instance d\'edi\'ee. & L \\
+\hline
+Offre gratuite & Base supprim\'ee 30 jours apr\`es cr\'eation, service mis en veille apr\`es inactivit\'e. Document\'e dans \texttt{DEPLOY.md}. & L \\
+\hline
+RLS PostgreSQL & Hors p\'erim\`etre~: incompatible avec le pool JPA mono-utilisateur sans refonte. & L \\
+\hline
+\end{tabular}
+
+\section{Protocole de mesure et reproductibilit\'e}
+Toutes les valeurs cit\'ees sont r\'eimprim\'ees par un script, sur un jeu de test s\'epar\'e du jeu d'entra\^inement. Le seuil d'un d\'etecteur est choisi \emph{du plus permissif vers le plus strict}, en s'arr\^etant au premier qui respecte le budget de 2~\% de fausses alertes~: aucun d\'etecteur n'est jug\'e sur un seuil choisi \`a la main pour le flatter. C'est ce qui rend la comparaison d\'efendable.
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \texttt{python ml/supervised\_vs\_unsupervised.py} --- imprime le tableau des quatre d\'etecteurs et le d\'etail par sc\'enario (dont \emph{drift\_then\_vanish} et le d\'elai d'alerte). C'est la preuve du rejet de l'Isolation Forest.
+  \item \texttt{python ml/train\_fraud\_model.py} --- r\'eentra\^ine et r\'e\'ecrit le mod\`ele et les 200 vecteurs de parit\'e.
+  \item \texttt{cd backend \&\& ./mvnw test} --- 50 tests, dont la parit\'e Java/scikit-learn, le sceau et les erreurs de requ\^ete.
+  \item \texttt{node verify\_fraud\_live.js}, \texttt{verify\_fraud\_panel.js}, \texttt{verify\_proof.js}, \texttt{verify\_pages.js}, \texttt{verify\_assign.js}, \texttt{verify\_stats.js} --- v\'erifications contre la pile en marche.
+  \item \texttt{python scripts/check\_render\_blueprint.py render.yaml} --- coh\'erence du blueprint Cloud.
+\end{itemize}
 
 \section*{Conclusion}
-Menaces identifi\'ees, contr\^oles impl\'ement\'es, efficacit\'e mesur\'ee : c'est ce r\'ecit, pas l'ajout de fonctionnalit\'es, qui fait un travail d'ing\'enieur.
+Le socle demand\'e est livr\'e et \'eprouv\'e par des tests, pas par des intentions. L'innovation n'est pas un cahier hors ligne~: c'est un mod\`ele entra\^in\'e, embarqu\'e dans le produit, qui note chaque position et dont le rejet de l'approche non supervis\'ee est lui-m\^eme document\'e. La partie cybers\'ecurit\'e ne sert pas de d\'ecor~: elle transforme une alerte en preuve. Et les lignes qui ne sont pas faites sont \'ecrites comme telles, avec ce qu'elles co\^utent.
 
 \end{document}

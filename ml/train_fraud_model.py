@@ -46,7 +46,7 @@ HONEST CONSTRAINT
     holdout score as if it were field performance.
 
 RUN
-    python ml/train_trajectory_anomaly.py
+    python ml/train_fraud_model.py
 """
 
 import gzip
