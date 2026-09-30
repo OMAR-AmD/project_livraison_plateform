@@ -314,6 +314,34 @@ jobs:
           }
           echo "health endpoint: 200, model reported loaded ($body)"
 
+          # A request the server cannot read is the caller's error. This answered
+          # 500 until the advice stopped swallowing it, and a 500 here is a lie
+          # that sends someone looking at the wrong machine. Asserted in the
+          # image because it is the image that answers the internet.
+          malformed=$(docker exec ci-backend curl -sS --max-time 10 \
+            -o /dev/null -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"email": ' \
+            http://localhost:8080/api/v1/auth/login)
+          [ "$malformed" = "400" ] || {
+            echo "a malformed body answered $malformed, expected 400"
+            exit 1
+          }
+          echo "a malformed body answers 400 rather than a server fault"
+
+          # The proof endpoint is where a stored seal becomes a check again, so
+          # it has to be reachable in the shipped image. Probing with an id that
+          # cannot exist proves routing reached the service without needing a
+          # sealed delivery to exist first.
+          proof=$(docker exec ci-backend curl -sS --max-time 10 \
+            -H "Authorization: Bearer $token" \
+            http://localhost:8080/api/v1/admin/deliveries/00000000-0000-0000-0000-000000000000/proof)
+          echo "$proof" | grep -q 'Delivery not found' || {
+            echo "the proof endpoint is not mapped as expected: $proof"
+            exit 1
+          }
+          echo "the proof endpoint is mapped and reaches the service"
+
           # The AI claim, checked in the image rather than in the source tree:
           # the model is loaded at startup and the service refuses to run
           # without it, so this log line is proof the detector is live in the

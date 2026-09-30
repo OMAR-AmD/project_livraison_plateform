@@ -2,7 +2,11 @@
 
 SwiftDeliver is a modern, full-stack web application designed to manage package deliveries. It connects Clients, Couriers (Livreurs), and Administrators through a unified, role-based platform. 
 
-The system uses **Artificial Intelligence (Google OR-Tools)** and **OSRM (Open Source Routing Machine)** for multi-stop route optimization, and **SSE over Redis** for real-time live map tracking.
+The system uses two quite different kinds of automation. **Google OR-Tools**
+solves the multi-stop courier routing problem; a **Random Forest, trained
+offline and evaluated in-process**, scores every courier GPS broadcast to
+detect delivery fraud. **OSRM** supplies the real road network, and **SSE over
+Redis** carries live map tracking.
 
 ---
 
@@ -63,6 +67,8 @@ courier's capacity.
 - Live dashboard with platform analytics. Every figure is a live aggregate computed by the database; nothing is seeded or backfilled, so an empty database honestly reports zero.
 - Manage user roles and system settings.
 - Real-time event feed of what is happening on the platform.
+- **AI fraud monitor**: every courier position update is scored in-process by a Random Forest over movement features. A flagged delivery shows its score curve in the modal, and the panel states that the training data is synthetic rather than presenting the model as field-proven.
+- **Verifiable proof of delivery**: confirming a delivery requires a fresh GPS fix within 500 m of the drop-off, and the event is sealed with an HMAC-SHA256 that only the server can produce. An admin can re-derive the seal later to check it still holds.
 
 ---
 
@@ -343,5 +349,6 @@ Log out and back in afterwards, because the role is baked into the JWT at login.
 | [`API_REFERENCE.md`](API_REFERENCE.md) | Every endpoint, with request/response shapes and the role required |
 | [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) | Module map, the delivery/payment/dispatch flow, data model, and the AI subsystem |
 | [`DEPLOY.md`](DEPLOY.md) | Deploying the whole stack to a public cloud on a free tier, and verifying that what came up is what was described |
+| [`scripts/argumentaire_securite_realiste.tex`](scripts/argumentaire_securite_realiste.tex) | The written defence: the rubric baseline, the AI innovation, and an explicit account of what is planned or a known limit, each claim tied to a command that reproduces it |
 | [`render.yaml`](render.yaml) | The cloud blueprint: both app images, Postgres, and the Redis-compatible cache |
 | [`scripts/prepare-osrm.sh`](scripts/prepare-osrm.sh) | One-command routing data preparation |
