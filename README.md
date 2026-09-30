@@ -342,4 +342,6 @@ Log out and back in afterwards, because the role is baked into the JWT at login.
 | :--- | :--- |
 | [`API_REFERENCE.md`](API_REFERENCE.md) | Every endpoint, with request/response shapes and the role required |
 | [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) | Module map, the delivery/payment/dispatch flow, data model, and the AI subsystem |
+| [`DEPLOY.md`](DEPLOY.md) | Deploying the whole stack to a public cloud on a free tier, and verifying that what came up is what was described |
+| [`render.yaml`](render.yaml) | The cloud blueprint: both app images, Postgres, and the Redis-compatible cache |
 | [`scripts/prepare-osrm.sh`](scripts/prepare-osrm.sh) | One-command routing data preparation |

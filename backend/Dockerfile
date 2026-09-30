@@ -71,7 +71,7 @@ USER spring:spring
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC" \
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=50 -XX:+UseSerialGC" \
     SPRING_PROFILES_ACTIVE=demo
 
 # Any HTTP response counts as healthy; a refused connection does not.
@@ -80,11 +80,16 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC" \
 # because it only accepts POST, and -f turns every 4xx into a failed check --
 # the container would report unhealthy forever while working perfectly. The
 # signal that actually matters is the socket: Spring Boot starts Tomcat only
-# after the context has refreshed, so "something answers on 8080" means the
-# database is connected and the fraud model has been loaded. A refused
-# connection, by contrast, means the JVM is gone or still starting.
+# after the context has refreshed, so "something answers" means the database is
+# connected and the fraud model has been loaded. A refused connection, by
+# contrast, means the JVM is gone or still starting.
+#
+# The port is read from the environment rather than written as 8080, because
+# `server.port` is `${PORT:8080}` and a PaaS that assigns a different port would
+# otherwise leave this probe aimed at a closed door -- reporting an application
+# that is serving perfectly as an unhealthy one.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -sS --max-time 4 -o /dev/null http://localhost:8080/api/v1/auth/login || exit 1
+  CMD curl -sS --max-time 4 -o /dev/null http://localhost:${PORT:-8080}/api/v1/auth/login || exit 1
 
 # exec form, not a shell: PID 1 becomes the JVM, so SIGTERM from `docker stop`
 # reaches the application and Spring runs its shutdown hook instead of being

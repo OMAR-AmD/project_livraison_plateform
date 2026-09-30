@@ -32,6 +32,11 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable) // Disable CSRF as we are using stateless JWTs
             .authorizeHttpRequests(auth -> auth
+                // The platform's health checker cannot present a JWT, so this one
+                // path is public. Deliberately an exact path and not a wildcard:
+                // it exposes liveness only, and widening it to "/api/v1/**" would
+                // quietly unauthenticate the entire API.
+                .requestMatchers("/api/v1/health").permitAll()
                 // Allow anyone to access the login and registration endpoints
                 .requestMatchers("/api/v1/auth/**").permitAll() 
                 // Persona-based routing for deliveries

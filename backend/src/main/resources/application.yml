@@ -1,5 +1,11 @@
 server:
-  port: 8080
+  # PORT, not a literal. Render (and every other PaaS) assigns the listening
+  # port through the environment and expects the process to bind it; a hardcoded
+  # 8080 means the platform starts, passes its own health check locally, and is
+  # then unreachable behind the platform's proxy because it is not listening
+  # where the proxy is knocking. The default keeps a bare `mvn spring-boot:run`
+  # on 8080 with nothing exported.
+  port: ${PORT:8080}
 
 spring:
   datasource:

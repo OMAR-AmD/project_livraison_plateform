@@ -88,7 +88,12 @@ EXPOSE 3000
 # instead of trying the next address. The symptom is a container that is
 # serving 200s to the host while reporting itself unhealthy, and the health of
 # the frontend is what gates anything depending on it.
+#
+# The port is read from the environment for the same reason as on the backend:
+# a PaaS assigns the listening port, and a probe pinned to 3000 would report a
+# perfectly serving application as unhealthy. 127.0.0.1 stays literal because
+# resolving a name is exactly what broke the previous version of this check.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO /dev/null http://127.0.0.1:3000/login || exit 1
+  CMD wget -qO /dev/null http://127.0.0.1:${PORT:-3000}/login || exit 1
 
 CMD ["node", "server.js"]

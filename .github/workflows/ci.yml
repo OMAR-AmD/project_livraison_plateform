@@ -291,6 +291,29 @@ jobs:
           fi
           echo "signed in as the seeded admin, token of ${#token} characters"
 
+          # The hosting platform decides whether to send traffic based on a 2xx
+          # from a health path, and every pre-existing route answers 403/404/405
+          # to an unauthenticated GET. So this is checked in the container rather
+          # than assumed: a regression that made the endpoint private would leave
+          # the deploy permanently "unhealthy" while the application worked
+          # perfectly in a browser.
+          health=$(docker exec ci-backend curl -sS --max-time 10 \
+            -w ' %{http_code}' http://localhost:8080/api/v1/health)
+          code="${health##* }"
+          body="${health% *}"
+          if [ "$code" != "200" ]; then
+            echo "the health endpoint answered $code, expected 200: $body"
+            exit 1
+          fi
+          # The body is asserted, not just the status: a 200 that reports the
+          # fraud model as missing would mean the platform routes traffic to an
+          # instance whose only AI component is not there.
+          echo "$body" | grep -q '"fraudModel":"loaded"' || {
+            echo "health endpoint does not report the model as loaded: $body"
+            exit 1
+          }
+          echo "health endpoint: 200, model reported loaded ($body)"
+
           # The AI claim, checked in the image rather than in the source tree:
           # the model is loaded at startup and the service refuses to run
           # without it, so this log line is proof the detector is live in the
@@ -317,6 +340,20 @@ jobs:
         env:
           JWT_SECRET_KEY: ci-placeholder-key-not-used-for-a-real-deployment
         run: docker compose config --quiet
+
+      # render.yaml is how the platform reaches a public cloud, and it fails in a
+      # way nothing else here would notice: the repo stays green while a deploy
+      # is rejected. Render's own schema cannot be checked from CI without
+      # depending on a remote URL, and that check is run by hand before a release
+      # instead. What is checked here is the failure the schema is structurally
+      # unable to see -- an environment variable pointing at a database or service
+      # this blueprint does not declare, which validates perfectly and then hands
+      # the backend an empty host.
+      - name: The cloud blueprint is internally consistent
+        run: |
+          set -euo pipefail
+          pip install --quiet pyyaml
+          python scripts/check_render_blueprint.py render.yaml
 
       - name: Report image sizes
         run: |
