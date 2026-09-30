@@ -51,7 +51,16 @@ public class PricingService {
 
     public PricingService(
             ObjectMapper objectMapper,
-            @Value("${app.osrm.base-url:http://localhost:5000}") String osrmBaseUrl) {
+            // `application.`, not `app.` The property really lives under the
+            // `application:` root in application.yml, and the mismatch was
+            // invisible: a typo'd @Value with a default falls back to that
+            // default instead of failing, so this silently read
+            // localhost:5000 no matter what OSRM_BASE_URL said. On a developer
+            // machine that is the right answer, so nothing ever noticed. In a
+            // container localhost is the container itself, and every quote
+            // 503'd. The default is kept so the unit tests can still build
+            // this without a property source.
+            @Value("${application.osrm.base-url:http://localhost:5000}") String osrmBaseUrl) {
         this.objectMapper = objectMapper;
         this.osrmBaseUrl = osrmBaseUrl;
         // Explicit timeouts: without them a stalled OSRM leaves the caller blocked

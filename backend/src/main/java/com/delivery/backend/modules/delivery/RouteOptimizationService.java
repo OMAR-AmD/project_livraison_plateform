@@ -29,7 +29,9 @@ public class RouteOptimizationService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String osrmTableApi;
 
-    public RouteOptimizationService(@Value("${app.osrm.base-url:http://localhost:5000}") String osrmBaseUrl) {
+    // `application.`, not `app.` -- see PricingService for why the mismatch
+    // between this @Value and the yml key went unnoticed for so long.
+    public RouteOptimizationService(@Value("${application.osrm.base-url:http://localhost:5000}") String osrmBaseUrl) {
         // Explicit timeouts: this call sits inside the auto-dispatch loop, which runs
         // once per candidate courier. Without them a stalled OSRM blocks the caller
         // indefinitely and the surrounding transaction stays open.

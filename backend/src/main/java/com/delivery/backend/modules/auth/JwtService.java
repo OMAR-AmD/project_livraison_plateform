@@ -2,13 +2,14 @@ package com.delivery.backend.modules.auth;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -16,6 +17,9 @@ import java.util.function.Function;
 
 @Service
 public class JwtService {
+
+    /** HS256 needs a key of at least 256 bits. */
+    public static final int MIN_SECRET_BYTES = 32;
 
     // Injects the values straight from your application.yml
     @Value("${application.security.jwt.secret-key}")
@@ -89,11 +93,48 @@ public class JwtService {
     }
 
     /**
-     * Converts the Base64 String from application.yml into a cryptographically 
-     * secure SecretKey object usable by the HMAC-SHA256 algorithm.
+     * The configured secret, used as raw bytes.
+     *
+     * <p>This used to be {@code Decoders.BASE64.decode(secretKey)}, and that was a
+     * trap rather than a decision. The documented way to produce the key is
+     * {@code openssl rand -hex 32}, which yields 64 hex characters -- and hex
+     * characters are all legal Base64 characters, in a length that is a multiple
+     * of 4, so it decoded to 48 bytes and everything worked. That is why nobody
+     * noticed: the one command the project tells you to run happened to survive
+     * the wrong decoder.
+     *
+     * <p>Any other value did not survive it. A 49-character placeholder could not
+     * be Base64-decoded, JJWT threw, and the generic {@code JwtException} handler
+     * answered <em>login</em> with 401 "Authentication failed" -- indistinguishable
+     * from a wrong password, and pointing at the user's credentials rather than
+     * at the deployment's configuration.
+     *
+     * <p>Raw UTF-8 bytes make the contract the one that is actually documented:
+     * a string of at least {@value #MIN_SECRET_BYTES} bytes, however you chose to
+     * generate it. {@link #checkSecretKey()} refuses anything shorter at startup,
+     * so a weak key is a boot failure naming the variable rather than a mystery
+     * 401 that a user is asked to debug.
      */
     private SecretKey getSignInKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
+        return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Fails the boot on an unusable signing key.
+     *
+     * <p>Without this, a key that is present but too short is accepted at
+     * startup and only explodes when someone tries to log in -- as a 401 that
+     * looks like a credential problem. The same reasoning as
+     * TrajectoryFraudConfig: a platform that cannot authenticate correctly
+     * should refuse to start rather than run and mislead.
+     */
+    @PostConstruct
+    void checkSecretKey() {
+        int bytes = secretKey == null ? 0 : secretKey.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "JWT_SECRET_KEY is " + bytes + " byte(s); HS256 needs at least " + MIN_SECRET_BYTES
+                            + ". Generate one with: openssl rand -hex 32");
+        }
     }
 }
