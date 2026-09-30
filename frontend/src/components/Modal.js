@@ -14,16 +14,38 @@ import { useEffect, useRef } from 'react';
 export default function Modal({ isOpen, onClose, title, description, children, footer, size = 'md' }) {
   const panelRef = useRef(null);
   const previouslyFocused = useRef(null);
+  const prevOverflow = useRef('');
+  const prevPadding = useRef('');
+  const wasOpen = useRef(false);
+  // Parents pass inline `onClose` arrows, so its identity changes on every
+  // render. Reading it through a ref keeps this effect tied to the open/close
+  // transitions instead of re-running (and re-stealing focus) on each render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // True close transition only: restore scroll and return focus to the
+      // element that opened the dialog. Parent re-renders while closed do nothing.
+      if (wasOpen.current) {
+        wasOpen.current = false;
+        document.body.style.overflow = prevOverflow.current;
+        document.body.style.paddingRight = prevPadding.current;
+        if (previouslyFocused.current instanceof HTMLElement) {
+          previouslyFocused.current.focus();
+        }
+      }
+      return;
+    }
+    if (wasOpen.current) return; // Already open: a parent re-render must not touch focus.
+    wasOpen.current = true;
 
     previouslyFocused.current = document.activeElement;
 
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose?.();
+        onCloseRef.current?.();
       }
     };
 
@@ -33,23 +55,21 @@ export default function Modal({ isOpen, onClose, title, description, children, f
     // behind the overlay does not shift sideways as it disappears.
     const { body } = document;
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const prevOverflow = body.style.overflow;
-    const prevPadding = body.style.paddingRight;
+    prevOverflow.current = body.style.overflow;
+    prevPadding.current = body.style.paddingRight;
     body.style.overflow = 'hidden';
     if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
 
-    // Focus the panel so screen readers announce the dialog.
+    // Focus the panel once, on open, so screen readers announce the dialog.
+    // Never again while open: re-focusing here is what dismissed the mobile
+    // keyboard on every background refresh.
     panelRef.current?.focus();
 
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      body.style.overflow = prevOverflow;
-      body.style.paddingRight = prevPadding;
-      if (previouslyFocused.current instanceof HTMLElement) {
-        previouslyFocused.current.focus();
-      }
     };
-  }, [isOpen, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

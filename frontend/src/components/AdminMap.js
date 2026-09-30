@@ -65,6 +65,27 @@ export default function AdminMap({ deliveries }) {
   const [courierPositions, setCourierPositions] = useState({});
   const [courierRoutes, setCourierRoutes] = useState({});
 
+  // Drop pins and polylines for couriers that no longer have an active stop.
+  // Without this, deleting a delivery or marking it delivered leaves the
+  // courier's last known pin and its whole route on the map forever, because
+  // both pieces of state are keyed by email and nothing ever removes them.
+  useEffect(() => {
+    const live = new Set(
+      deliveries
+        .filter(d => d.status === 'IN_TRANSIT' || d.status === 'ASSIGNED')
+        .map(d => d.courierEmail)
+        .filter(Boolean)
+    );
+    setCourierPositions(prev => {
+      const next = Object.fromEntries(Object.entries(prev).filter(([email]) => live.has(email)));
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+    setCourierRoutes(prev => {
+      const next = Object.fromEntries(Object.entries(prev).filter(([email]) => live.has(email)));
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [deliveries]);
+
   useEffect(() => {
     const activeDeliveries = deliveries.filter(d => d.status === 'IN_TRANSIT');
     if (activeDeliveries.length === 0) return;

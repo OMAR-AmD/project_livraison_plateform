@@ -285,6 +285,13 @@ export async function adminDeleteDelivery(deliveryId) {
   });
 }
 
+export async function adminUpdateDeliveryStatus(deliveryId, status) {
+  return apiFetch(`/admin/deliveries/${deliveryId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function adminGetStats() {
   return apiFetch('/admin/deliveries/stats');
 }

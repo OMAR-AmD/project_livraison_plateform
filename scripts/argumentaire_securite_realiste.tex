@@ -1,0 +1,86 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{\textbf{Preuve de livraison et d\'etection d'anomalies de trajectoire\\ \large Argumentaire d'innovation -- SwiftDeliver}}
+\author{Projet SwiftDeliver -- plateforme de livraison}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Pourquoi la s\'ecurit\'e}
+SwiftDeliver manipule des adresses clients, des positions GPS en temps r\'eel, des paiements et trois niveaux de privil\`eges, avec un assistant conversationnel outill\'e capable d'annuler une livraison. La fraude logistique moderne (GPS falsifi\'e, fausse livraison, r\'epudiation) est un probl\`eme de donn\'ees comportementales, pas d'attaque r\'eseau classique : c'est ce qui rend l'axe s\'ecurit\'e pertinent pour un profil Data/IA.
+
+Les autres axes ont \'et\'e \'ecart\'es pour des raisons v\'erifiables : le moteur OSRM ($\sim$820 Mo RAM, 1,7 Go de donn\'ees) exclut les offres Cloud gratuites ; il n'existe aucun capteur ni protocole IoT dans le syst\`eme ; le frontend est responsive mais sans PWA ni notifications push. La s\'ecurit\'e est le seul axe avec du code existant et une extension d\'emontrable en local \`a co\^ut z\'ero.
+
+\section{Mod\`ele de menaces}
+Statuts : \textbf{F}ait (couvert par un test automatis\'e uniquement), \textbf{P}r\'evu, \textbf{L}imite connue. R\`egle : rien n'est marqu\'e F sans test.
+
+\begin{tabular}{|p{3.0cm}|p{4.0cm}|p{4.7cm}|c|}
+\hline
+\textbf{Actif} & \textbf{Menace} & \textbf{Contr\^ole} & \textbf{Statut} \\
+\hline
+R\^ole utilisateur & \'El\'evation de privil\`eges \`a l'inscription & Refus de \texttt{ADMIN}, r\^oles rout\'es par \texttt{SecurityConfig} & F \\
+\hline
+Tarif & Falsification du prix c\^ot\'e client & Prix calcul\'e serveur depuis la route OSRM & F \\
+\hline
+Capacit\'e livreurs & Commande impay\'ee occupant un livreur & Dispatch coupl\'e \`a la capture du paiement & F \\
+\hline
+Position d'autrui & IDOR : un client suit la livraison d'un autre via \texttt{GET /location}, SSE ou WebSocket & Contr\^ole de propri\'et\'e sur chaque acc\`es position (audit des endpoints existants \textbf{avant} le Sprint~2) & P \\
+\hline
+Commande d'autrui via chatbot & Injection de prompt sur l'assistant outill\'e & Outil li\'e \`a l'appelant authentifi\'e + confirmation explicite avant annulation ; jeu d'attaques class\'e OWASP LLM & P \\
+\hline
+Compte & Force brute sur \texttt{/auth/login} & Rate limiting Redis + backoff & P \\
+\hline
+Session et r\^oles & Token vol\'e valide 24~h ; r\^ole r\'evoqu\'e conserv\'e 24~h & \texttt{tokenVersion} par utilisateur, v\'erifi\'e \`a chaque requ\^ete & P \\
+\hline
+Livraison & Fausse livraison \`a distance, r\'epudiation & Sceau HMAC + seuil 500~m + OTP client (Sprint~1) & P \\
+\hline
+OTP & Devinette (10\,000 combinaisons \`a 4 chiffres) & Tentatives limit\'ees + expiration courte (le vrai contr\^ole) ; stockage en HMAC \`a cl\'e serveur, jamais en hash simple & P \\
+\hline
+Trajectoire & D\'etour, arr\^et suspect, GPS falsifi\'e & Garde-fou vs polyline OSRM (Sprint~2) & P \\
+\hline
+Historique & Falsification des preuves en base & Cha\^\i nage des sceaux \textbf{par livreur}, ancrage p\'eriodique du dernier hash \textbf{hors base} (fichier append-only ou valeur report\'ee dans le rapport : un ancrage dans la m\^eme base ne prot\`ege de rien) & P \\
+\hline
+Sortie de secours & Livreur l'utilisant syst\'ematiquement & Compteur d'usage par livreur, alerte au-del\`a d'un seuil (m\'etrique du protocole) & P \\
+\hline
+Donn\'ees personnelles & Positions et adresses (RGPD / loi 09-08) & Minimisation, dur\'ees de conservation, acc\`es restreint & L \\
+\hline
+Remise \`a deux & Collusion client-livreur (OTP partag\'e volontairement) & Aucun contr\^ole technique ; d\'etection a posteriori via motifs (m\^eme couple, m\^eme lieu) & L \\
+\hline
+Absence des deux parties & Livreur et client absents : OTP et secours en tension & Proc\'edure d\'efinie (retour d\'ep\^ot, replanification), tra\c cabilit\'e du cas & L \\
+\hline
+Validation externe & GeoLife (traces chinoises) ne valide que le bruit GPS, pas la comparaison \`a la polyline marocaine & Limite \'ecrite dans le protocole de mesure & L \\
+\hline
+\end{tabular}
+
+Mod\`ele d'attaquant : le HMAC prot\`ege contre un attaquant avec acc\`es \`a la base \textbf{sans} la cl\'e serveur, pas contre un attaquant poss\'edant les deux. Le GPS reste d\'eclaratif : la d\'emo utilise une simulation assum\'ee.
+
+\section{Ce qui sera livr\'e (p\'erim\`etre ferm\'e)}
+\textbf{Sprint~1 -- Preuve de livraison scell\'ee.} \`A chaque passage \`a DELIVERED : position exig\'ee (Redis en priorit\'e, fra\^\i cheur TTL 30~s contr\^ol\'ee, refus si divergence avec la requ\^ete), distance Haversine contre la destination avec refus au-del\`a de 500~m (seuil configurable), sceau \textbf{HMAC-SHA256} \`a cl\'e serveur couvrant (commande, livreur, client, position, horodatage), \textbf{cha\^\i nage par livreur} avec ancrage, \textbf{OTP 4--6 chiffres} g\'en\'er\'e \`a \texttt{IN\_TRANSIT} et saisi par le livreur. Sortie de secours : signalement avec validation admin trac\'ee.
+
+\textbf{Sprint~2 -- Garde-fou de trajectoire livr\'e.} Comparaison de la position courante \`a la polyline OSRM dans le backend Java existant, seuils de d\'eviation et d'arr\^et, alertes.
+
+\textbf{Durcissement.} Audit IDOR des endpoints existants d'abord, rate limiting du login, \texttt{tokenVersion}, jeu de 20--30 attaques chatbot class\'ees OWASP Top~10 for LLM, CI s\'ecurit\'e (Trivy/gitleaks), \'etat de l'art court.
+
+Le RLS PostgreSQL est hors p\'erim\`etre : incompatible avec le pool JPA mono-utilisateur sans refonte.
+
+\section{Protocole de mesure}
+Calibration et test s\'epar\'es : les seuils sont r\'egl\'es sur un jeu, \'evalu\'es sur un autre. Mod\`ele de bruit GPS justifi\'e (plus fort en ville), validation possible sur traces r\'eelles publiques (GeoLife). Mesures : taux de faux refus du seuil 500~m ; surco\^ut de latence du scellement ; pr\'ecision/rappel du garde-fou ; attaques chatbot en 20--30 cas pr\'esent\'es comme un petit \'echantillon. Pour le chatbot, deux mesures distinctes : r\'eussite \textbf{au niveau du mod\`ele} (probabiliste, Llama~1B fragile) vs \textbf{action ex\'ecut\'ee} (d\'eterministe, contr\^ol\'ee serveur) -- la seconde doit tomber \`a z\'ero, c'est l'argument central.
+
+\textbf{Volet data (fili\`ere Data/IA).} Le garde-fou \`a r\`egles sert de baseline ; un notebook Python hors ligne en extrait quelques variables (\'ecart \`a la polyline, dur\'ee d'arr\^et, \'ecart de dur\'ee vs OSRM) et compare un mod\`ele simple (Isolation Forest ou r\'egression logistique) \`a la baseline, pr\'ecision/rappel c\^ote \`a c\^ote. Pas de microservice, pas de d\'eploiement ; les heures sont prises sur le poste mesures, que le notebook sert aussi \`a produire.
+
+\section{Planning 100~h (16~h effectu\'ees, 84~h restantes)}
+Les 16~h couvrent l'audit existant et le d\'ebut du Sprint~1. Reste : audit IDOR + Sprint~1 blind\'e (22~h, sortie de secours minimale : un endpoint, un statut, une ligne de journal), suite adversariale chatbot (12~h), Sprint~2 + journal cha\^\i n\'e (22~h ; si manque de temps, sacrifier l'ancrage ou le notebook, pas le garde-fou), durcissement auth (8~h), mesures + menaces + \'etat de l'art (10~h), \textbf{rapport et soutenance (10~h)}. Total 100~h, z\'ero d\'epense, z\'ero d\'eploiement. Hypoth\`ese : ces 100~h couvrent tout le projet ; sans marge, toute ligne Pr\'evu non livr\'ee est reclass\'ee en limite avant la soutenance.
+
+\section*{Conclusion}
+Menaces identifi\'ees, contr\^oles impl\'ement\'es, efficacit\'e mesur\'ee : c'est ce r\'ecit, pas l'ajout de fonctionnalit\'es, qui fait un travail d'ing\'enieur.
+
+\end{document}

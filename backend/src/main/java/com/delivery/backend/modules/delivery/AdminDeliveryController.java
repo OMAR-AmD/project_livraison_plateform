@@ -33,6 +33,13 @@ public class AdminDeliveryController {
         return ResponseEntity.ok(deliveryService.assignCourier(id, request.getCourierId()));
     }
 
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<DeliveryResponse> updateStatus(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.delivery.backend.modules.delivery.dto.DeliveryStatusUpdateRequest request) {
+        return ResponseEntity.ok(deliveryService.adminUpdateStatus(id, request.getStatus()));
+    }
+
     @GetMapping("/{id}/location")
     public ResponseEntity<com.delivery.backend.modules.delivery.dto.LocationUpdateRequest> getCourierLocation(
             @PathVariable UUID id) {

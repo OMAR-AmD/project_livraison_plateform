@@ -324,8 +324,7 @@ public class DeliveryService {
     }
 
     @Transactional
-    public DeliveryResponse assignCourier(UUID deliveryId, UUID courierId) {
-        Delivery delivery = deliveryRepository.findById(deliveryId)
+    public DeliveryResponse assignCourier(UUID deliveryId, UUID courierId) {        Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
         User courier = userRepository.findById(courierId)
@@ -366,6 +365,34 @@ public class DeliveryService {
         return toResponse(delivery);
     }
 
+    /**
+     * Status override, admin only. No courier-ownership check: an administrator
+     * may move any delivery to any state (e.g. force DELIVERED, reopen as
+     * ASSIGNED, cancel an in-flight order). Both parties are notified so the
+     * override never happens silently.
+     */
+    @Transactional
+    public DeliveryResponse adminUpdateStatus(UUID deliveryId, DeliveryStatus newStatus) {
+        Delivery delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
+
+        log.warn("Admin overrode delivery {} status: {} -> {}.",
+                deliveryId, delivery.getStatus(), newStatus);
+        delivery.setStatus(newStatus);
+        delivery = deliveryRepository.save(delivery);
+
+        notificationService.createNotification(delivery.getClient(),
+            "An administrator changed the status of your delivery '"
+                + delivery.getDescription() + "' to " + newStatus);
+        if (delivery.getCourier() != null) {
+            notificationService.createNotification(delivery.getCourier(),
+                "An administrator changed the status of delivery '"
+                    + delivery.getDescription() + "' to " + newStatus);
+        }
+
+        return toResponse(delivery);
+    }
+
     public List<DeliveryResponse> getDeliveriesForClient(User client) {
         return deliveryRepository.findByClientOrderByCreatedAtDesc(client).stream()
                 .map(this::toResponse)
@@ -392,15 +419,19 @@ public class DeliveryService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Hard delete, admin only. Unlike the client-facing deletion, no status
+     * restriction applies: an administrator may remove a delivery in any state
+     * (PENDING, ASSIGNED, IN_TRANSIT included). Callers are expected to have
+     * verified the ADMIN role — this controller mapping is admin-only.
+     */
     @Transactional
     public void deleteDelivery(UUID deliveryId) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
-        if (delivery.getStatus() != DeliveryStatus.DELIVERED && delivery.getStatus() != DeliveryStatus.CANCELLED) {
-            throw new IllegalArgumentException("Only delivered or cancelled deliveries can be deleted");
-        }
-
+        log.warn("Admin force-deleted delivery {} (was {}, {}).",
+                deliveryId, delivery.getStatus(), delivery.getPaymentStatus());
         deliveryRepository.delete(delivery);
     }
 

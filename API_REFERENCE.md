@@ -217,8 +217,19 @@ intervention; normal assignment is automatic on payment capture.
 
 * **Body**: `{ "courierId": "uuid-of-courier" }`
 
+### `PATCH /admin/deliveries/{id}/status`
+Admin status override: moves any delivery to any state (`PENDING`,
+`ASSIGNED`, `IN_TRANSIT`, `DELIVERED`, `CANCELLED`) with no courier-ownership
+check. Both client and courier are notified, and the override is logged
+server-side, so it never happens silently.
+
+* **Body**: `{ "status": "IN_TRANSIT" }`
+
 ### `DELETE /admin/deliveries/{id}`
-Removes a `DELIVERED` or `CANCELLED` delivery. Returns `204`.
+Force-removes a delivery in any state, including `PENDING`, `ASSIGNED` and
+`IN_TRANSIT`. Logged server-side with the prior status and payment state.
+Returns `204`. (Clients may only delete their own `DELIVERED`/`CANCELLED`
+orders via `DELETE /client/deliveries/{id}`.)
 
 ### `GET /admin/deliveries/{id}/location`
 Last known courier position for oversight. `204` if expired.
