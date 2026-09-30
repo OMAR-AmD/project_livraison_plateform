@@ -30,4 +30,42 @@ public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
      */
     @org.springframework.data.jpa.repository.Query("SELECT SUM(d.price) FROM Delivery d WHERE d.paymentStatus = 'PAID'")
     Double getTotalRevenue();
+
+    // ---------------------------------------------------------------
+    // Per-courier aggregates
+    //
+    // A courier has no dedicated profile table, so their public track record
+    // is derived from the deliveries they were assigned. One grouped query
+    // feeds both the courier's own stats card and the admin user list, so the
+    // admin list stays at one query instead of one per row.
+    // ---------------------------------------------------------------
+
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT d.courier.id AS courierId,
+                   COUNT(d)    AS totalDeliveries,
+                   SUM(CASE WHEN d.status = com.delivery.backend.modules.delivery.DeliveryStatus.DELIVERED
+                            THEN 1 ELSE 0 END) AS deliveredDeliveries,
+                   COUNT(d.rating) AS ratingCount,
+                   AVG(d.rating)   AS averageRating
+            FROM Delivery d
+            WHERE d.courier IS NOT NULL
+            GROUP BY d.courier.id
+            """)
+    List<CourierStatsProjection> aggregateCourierStats();
+
+    long countByCourierAndStatus(User courier, DeliveryStatus status);
+
+    interface CourierStatsProjection {
+        java.util.UUID getCourierId();
+
+        Long getTotalDeliveries();
+
+        Long getDeliveredDeliveries();
+
+        /** How many rated deliveries the average is drawn from. */
+        Long getRatingCount();
+
+        /** Null when the courier has no rated delivery yet. */
+        Double getAverageRating();
+    }
 }

@@ -29,6 +29,19 @@ public class CourierDeliveryController {
         return ResponseEntity.ok(deliveryService.getDeliveriesForCourier(courier));
     }
 
+    /**
+     * The caller's own track record: deliveries completed, still active, cancelled,
+     * and their average rating.
+     *
+     * <p>Scoped to the authenticated courier — there is no id parameter, so one
+     * courier cannot read another's numbers by changing the URL.
+     */
+    @GetMapping("/stats")
+    public ResponseEntity<DeliveryService.CourierStatsDTO> getMyStats(
+            @AuthenticationPrincipal User courier) {
+        return ResponseEntity.ok(deliveryService.getCourierStats(courier));
+    }
+
     @PatchMapping("/{id}/status")
     public ResponseEntity<DeliveryResponse> updateStatus(
             @PathVariable UUID id,

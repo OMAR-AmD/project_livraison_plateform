@@ -197,6 +197,15 @@ export async function courierGetDeliveries() {
   return apiFetch('/courier/deliveries');
 }
 
+/**
+ * The signed-in courier's own track record (deliveries completed, active,
+ * cancelled, average rating). Takes no id on purpose: the backend scopes it to
+ * the caller's token, so one courier cannot read another's numbers.
+ */
+export async function courierGetStats() {
+  return apiFetch('/courier/deliveries/stats');
+}
+
 export async function courierUpdateStatus(id, status) {
   return apiFetch(`/courier/deliveries/${id}/status`, {
     method: 'PATCH',

@@ -475,6 +475,54 @@ public class DeliveryService {
         return toResponse(delivery);
     }
 
+    /**
+     * A courier's public track record.
+     *
+     * <p>Derived entirely from the deliveries the courier was assigned, because
+     * there is no separate courier profile to hold it. {@code averageRating} stays
+     * null when nothing has been rated yet, so the UI can distinguish "no ratings"
+     * from "rated zero" instead of printing a 0.0 that looks like a bad score.
+     */
+    public static class CourierStatsDTO {
+        public long totalDeliveries;
+        public long completedDeliveries;
+        public long activeDeliveries;
+        public long cancelledDeliveries;
+        public long ratingCount;
+        public Double averageRating;
+
+        public CourierStatsDTO(long totalDeliveries, long completedDeliveries, long activeDeliveries,
+                               long cancelledDeliveries, long ratingCount, Double averageRating) {
+            this.totalDeliveries = totalDeliveries;
+            this.completedDeliveries = completedDeliveries;
+            this.activeDeliveries = activeDeliveries;
+            this.cancelledDeliveries = cancelledDeliveries;
+            this.ratingCount = ratingCount;
+            this.averageRating = averageRating;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public CourierStatsDTO getCourierStats(User courier) {
+        List<Delivery> all = deliveryRepository.findByCourierOrderByCreatedAtDesc(courier);
+
+        long completed = all.stream().filter(d -> d.getStatus() == DeliveryStatus.DELIVERED).count();
+        long active = all.stream()
+                .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT)
+                .count();
+        long cancelled = all.stream().filter(d -> d.getStatus() == DeliveryStatus.CANCELLED).count();
+
+        // Average over the rated deliveries ONLY. Mapping every delivery to
+        // `rating != null ? rating : 0` and dividing by all of them silently
+        // dragged unrated orders in as zero-star reviews: a courier with one
+        // 5-star review and two unrated deliveries was shown 1.7 instead of 5.0.
+        List<Delivery> rated = all.stream().filter(d -> d.getRating() != null).toList();
+        Double avg = rated.isEmpty() ? null
+                : rated.stream().mapToInt(Delivery::getRating).average().orElse(0.0);
+
+        return new CourierStatsDTO(all.size(), completed, active, cancelled, rated.size(), avg);
+    }
+
     public static class AdminStatsDTO {
         public long totalUsers;
         public long totalDeliveries;

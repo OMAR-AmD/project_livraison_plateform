@@ -1,15 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { courierGetDeliveries, courierUpdateStatus, courierSendLocation, courierOptimizeRoute } from '@/lib/api';
+import { courierGetDeliveries, courierGetStats, courierUpdateStatus, courierSendLocation, courierOptimizeRoute } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import OptimizedRouteModal from '@/components/OptimizedRouteModal';
 import { StatusPill, PaymentTag } from '@/components/StatusPill';
+import CourierStats from '@/components/CourierStats';
 import StopAction from '@/components/StopAction';
 import EmptyState, { EmptyIcons } from '@/components/EmptyState';
 
 export default function CourierView() {
   const [deliveries, setDeliveries] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSimulating, setIsSimulating] = useState(false);
   const { addToast } = useToast();
@@ -22,6 +24,7 @@ export default function CourierView() {
 
   useEffect(() => {
     fetchDeliveries();
+    fetchStats();
   }, []);
 
   // Auto-start simulation if there is a delivery in transit
@@ -180,11 +183,26 @@ export default function CourierView() {
     }
   };
 
+  /**
+   * The track record is a second request, deliberately not folded into
+   * fetchDeliveries: if it fails, the courier should still get their round.
+   * A wrong-looking counter is a far smaller problem than an empty work list.
+   */
+  const fetchStats = async () => {
+    try {
+      setStats(await courierGetStats());
+    } catch (err) {
+      console.warn('Courier stats unavailable:', err);
+    }
+  };
+
   const handleStatusChange = async (id, newStatus) => {
     try {
       await courierUpdateStatus(id, newStatus);
       addToast('Status updated', 'success');
       fetchDeliveries();
+      // Completing a stop is what moves the counters, so refresh them too.
+      fetchStats();
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -219,6 +237,8 @@ export default function CourierView() {
           </button>
         </div>
       </header>
+
+      <CourierStats stats={stats} />
 
       <div className="surface overflow-hidden">
         {loading ? (

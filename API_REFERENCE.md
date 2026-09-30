@@ -172,6 +172,29 @@ is ownership-checked server-side.
 ### `GET /courier/deliveries`
 Deliveries assigned to the authenticated courier, newest first.
 
+### `GET /courier/deliveries/stats`
+The caller's own track record, for the stats panel above their round. Derived
+from the deliveries they were assigned, because the schema has no courier
+profile to hold it.
+
+```json
+{
+  "totalDeliveries": 3,
+  "completedDeliveries": 2,
+  "activeDeliveries": 1,
+  "cancelledDeliveries": 0,
+  "ratingCount": 1,
+  "averageRating": 5.0
+}
+```
+
+`averageRating` is `null` when nothing has been rated, so "no data" stays
+distinguishable from a genuine zero-star score. It is averaged over the **rated**
+deliveries only: including unrated orders as zeros would report a courier with
+one 5-star review and two unrated orders as 1.7.
+
+There is no id parameter, so a courier cannot read another courier's numbers.
+
 ### `PATCH /courier/deliveries/{id}/status`
 Advances an assigned delivery. Valid targets: `ASSIGNED`, `IN_TRANSIT`,
 `DELIVERED`. Rejected if the delivery is not assigned to the caller.
@@ -252,7 +275,22 @@ payment, voided orders and refunds are excluded.
 The ten most recent platform events, for the activity feed.
 
 ### `GET /admin/users`
-All accounts, for the user-management table.
+All accounts, for the user-management table. Each account carries its delivery
+track record, so a dispatcher can see a courier's standing without opening the
+deliveries list.
+
+```json
+{
+  "id": "…", "email": "courier1@swift.com", "role": "LIVREUR", "verified": true,
+  "totalDeliveries": 3, "deliveredDeliveries": 2,
+  "ratingCount": 1, "averageRating": 5.0
+}
+```
+
+`averageRating` is `null` for clients and admins, and for couriers with nothing
+rated yet. The aggregates come from a single `GROUP BY courier` query rather
+than one per row. These are the same numbers `GET /courier/deliveries/stats`
+returns for that courier.
 
 ### `GET /admin/users/couriers`
 Accounts with the `LIVREUR` role.

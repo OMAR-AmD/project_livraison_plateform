@@ -10,6 +10,8 @@ import {
   adminGetDeliveries,
 } from '@/lib/api';
 import Modal from '@/components/Modal';
+import EmptyState from '@/components/EmptyState';
+import StarRating from '@/components/StarRating';
 import { useToast } from '@/components/Toast';
 
 const ROLE_BADGE = {
@@ -109,6 +111,26 @@ export default function DashboardPage() {
 
   if (!user || user.role !== 'ADMIN' || loading) {
     return <div className="p-8 text-content-muted">Loading…</div>;
+  }
+
+  // The fetch may have failed (backend or database unreachable) while still
+  // clearing `loading`. Rendering the metrics with a null `stats` crashed the
+  // whole page with "Cannot read properties of null". Show a retryable error
+  // instead of a red runtime box.
+  if (!stats) {
+    return (
+      <div className="p-8">
+        <EmptyState
+          title="Dashboard unavailable"
+          body="The statistics could not be loaded. The backend or database may be unreachable."
+          action={
+            <button onClick={() => window.location.reload()} className="btn-primary btn-sm">
+              Retry
+            </button>
+          }
+        />
+      </div>
+    );
   }
 
   const pipelineTotal = STATE_ORDER.reduce((sum, s) => sum + counts[s], 0);
@@ -290,17 +312,19 @@ export default function DashboardPage() {
               <tr>
                 <th className="table-head">Email</th>
                 <th className="table-head">Role</th>
+                <th className="table-head text-right">Deliveries</th>
+                <th className="table-head">Rating</th>
                 <th className="table-head">Verified</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {usersLoading ? (
                 <tr>
-                  <td colSpan={3} className="p-6 text-center text-content-faint">Loading…</td>
+                  <td colSpan={5} className="p-6 text-center text-content-faint">Loading…</td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="p-6 text-center text-content-faint">No users found.</td>
+                  <td colSpan={5} className="p-6 text-center text-content-faint">No users found.</td>
                 </tr>
               ) : (
                 users.map((u) => (
@@ -311,12 +335,44 @@ export default function DashboardPage() {
                         {u.role === 'LIVREUR' ? 'Courier' : u.role === 'ADMIN' ? 'Admin' : 'Client'}
                       </span>
                     </td>
+                    {/* Only couriers have a track record. Clients and admins are
+                        not assigned deliveries, so a dash is truthful where a 0
+                        would imply a courier who has underperformed. */}
+                    <td className="table-cell text-right text-content-muted tabular">
+                      {u.role === 'LIVREUR' ? (
+                        <span title={`${u.deliveredDeliveries ?? 0} delivered of ${
+                          u.totalDeliveries ?? 0
+                        } assigned`}>
+                          {u.deliveredDeliveries ?? 0}
+                          <span className="text-content-faint">
+                            {' '}/ {u.totalDeliveries ?? 0}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-content-faint">—</span>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      {u.role === 'LIVREUR' ? (
+                        <StarRating
+                          value={u.averageRating}
+                          count={u.ratingCount ?? 0}
+                          size="sm"
+                        />
+                      ) : (
+                        <span className="text-content-faint">—</span>
+                      )}
+                    </td>
                     <td className="table-cell text-content-muted">{u.verified ? 'Yes' : 'No'}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+          <p className="mt-3 text-xs text-content-faint">
+            Deliveries are shown as delivered / assigned. The rating is the mean of the
+            ratings clients left on that courier&apos;s delivered orders.
+          </p>
         </div>
         <div className="mt-6 flex justify-end">
           <button type="button" onClick={() => setUsersOpen(false)} className="btn-secondary">
