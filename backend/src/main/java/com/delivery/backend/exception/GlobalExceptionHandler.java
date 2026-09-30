@@ -9,12 +9,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
@@ -191,6 +194,43 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.METHOD_NOT_ALLOWED);
+    }
+
+    /**
+     * The request could not be read: a body that is not valid JSON, a query
+     * parameter that is missing, or a path variable of the wrong type.
+     *
+     * <p>These are the caller's mistakes, and Spring's own resolver answers 400
+     * for each. They are named explicitly because the catch-all handler below
+     * matches {@code Exception} and an advice runs before the default resolver,
+     * which turned all of them into a 500 "unexpected error": the caller was told
+     * the server broke when their request did, and the message naming the
+     * offending field was thrown away. This is the same failure the 404 and 405
+     * handlers exist to prevent.
+     */
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class,
+    })
+    public ResponseEntity<ErrorResponse> handleUnreadableRequest(Exception ex) {
+        String detail;
+        if (ex instanceof HttpMessageNotReadableException) {
+            detail = "The request body is not valid JSON";
+        } else if (ex instanceof MethodArgumentTypeMismatchException mismatch) {
+            detail = "Parameter '" + mismatch.getName() + "' has the wrong format";
+        } else {
+            detail = ex.getMessage();
+        }
+        log.warn("Unreadable request: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "Invalid request",
+                detail,
+                LocalDateTime.now()
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(Exception.class)

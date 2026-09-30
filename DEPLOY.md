@@ -57,13 +57,13 @@ contains a secret, so there is nothing to leak out of this file or out of git.
 ## 2. Verify it, do not assume it
 
 The build taking a while and going green is not the same as the platform
-working. Three checks, in order. Substitute the real hostnames — if a name was
+working. Four checks, in order. Substitute the real hostnames — if a name was
 already taken, Render appends a suffix and the dashboard shows the real one.
 
 ```bash
 # 1. The backend is alive AND the AI component is inside the running process.
 #    This is the single most important line in this document: it proves the
-#    container that reachable from the internet loaded the fraud model.
+#    container reachable from the internet loaded the fraud model.
 curl -s https://swiftdeliver-backend.onrender.com/api/v1/health
 # expected: {"status":"UP","fraudModel":"loaded","fraudTrees":60}
 
@@ -82,6 +82,15 @@ curl -s -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@swift.com","password":"password123"}'
 # expected: a JSON object containing a non-empty "token"
+
+# 4. A body the server cannot read is the caller's error, not a server fault.
+#    This answered 500 before the error mapping was fixed, so a 500 here means
+#    the deployed image predates the source -- which is exactly what a stale
+#    build looks like from the outside.
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"email": '
+# expected: 400
 ```
 
 Then open the frontend URL, sign in as `admin@swift.com` / `password123`, and
