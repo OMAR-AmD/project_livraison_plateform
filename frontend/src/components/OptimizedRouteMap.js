@@ -32,17 +32,23 @@ const MapBounds = ({ waypoints, courierPos }) => {
   const hasFittedRef = useRef(false);
 
   useEffect(() => {
-    if (waypoints && waypoints.length > 0 && courierPos && !hasFittedRef.current) {
-      const pts = [[courierPos.lat, courierPos.lng], ...waypoints.map(wp => [wp.latitude, wp.longitude])];
-      const bounds = L.latLngBounds(pts);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    if (hasFittedRef.current) return;
+    // Fit as soon as there is anything to show. The courier may not have
+    // broadcast yet -- the client map is visible from the ASSIGNED state -- and
+    // in that case centring on the pickup/drop-off still beats leaving the
+    // default Casablanca view.
+    const pts = [];
+    if (courierPos) pts.push([courierPos.lat, courierPos.lng]);
+    if (waypoints) waypoints.forEach(wp => pts.push([wp.latitude, wp.longitude]));
+    if (pts.length > 0) {
+      map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 16 });
       hasFittedRef.current = true;
     }
   }, [map, waypoints, courierPos]);
   return null;
 };
 
-export default function OptimizedRouteMap({ orderedWaypoints, courierPos }) {
+export default function OptimizedRouteMap({ orderedWaypoints, courierPos, height = '500px' }) {
   const [routeCoordinates, setRouteCoordinates] = useState([]);
 
   const hasFetchedRef = useRef(false);
@@ -80,7 +86,7 @@ export default function OptimizedRouteMap({ orderedWaypoints, courierPos }) {
   const center = points.length > 0 ? points[0] : [33.5731, -7.5898]; // Default
 
   return (
-    <div style={{ height: '500px', width: '100%' }}>
+    <div style={{ height, width: '100%' }}>
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}>
         <BasemapLayer />
         

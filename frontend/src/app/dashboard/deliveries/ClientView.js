@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { clientGetDeliveries, clientCreateDelivery, clientCancelDelivery, clientQuoteDelivery, clientPayDelivery } from '@/lib/api';
 import Modal from '@/components/Modal';
 import TrackingModal from '@/components/TrackingModal';
+import ClientLiveMap from '@/components/ClientLiveMap';
 import RatingModal from '@/components/RatingModal';
 import PaymentModal from '@/components/PaymentModal';
 import LocationPicker from '@/components/LocationPicker';
@@ -172,6 +173,14 @@ export default function ClientView() {
     }
   };
 
+  // The order the client is currently waiting on. A client realistically has at
+  // most one live order; prefer the one already moving, otherwise the one that
+  // just got a courier.
+  const trackedDelivery =
+    deliveries.find((d) => d.status === 'IN_TRANSIT') ||
+    deliveries.find((d) => d.status === 'ASSIGNED') ||
+    null;
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -190,6 +199,8 @@ export default function ClientView() {
           New delivery
         </button>
       </header>
+
+      {trackedDelivery && <ClientLiveMap delivery={trackedDelivery} />}
 
       <div className="surface overflow-hidden">
         {loading ? (
