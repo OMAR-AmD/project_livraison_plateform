@@ -55,7 +55,7 @@ courier's capacity.
 ### 👤 Client
 - Request new deliveries via an interactive map (Address Auto-completion).
 - **Simulated Payment Gateway** (Stripe-like secure checkout experience).
-- Real-time GPS tracking on a map to see the Courier moving live.
+- Real-time GPS tracking drawn inline on the deliveries page for your active order — live, scoped to your own delivery, and sized as a section so the order list stays in view.
 - Rate the courier and leave reviews upon delivery completion.
 
 ### 🚚 Courier (Livreur)
