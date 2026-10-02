@@ -259,9 +259,14 @@ jobs:
         run: |
           set -euo pipefail
           docker network create ci-net >/dev/null
-          docker run -d --name ci-db --network ci-net pgvector/pgvector:pg15 \
+          # The -e flags must come before the image name. After it, Docker treats
+          # them as the container's command: Postgres exits complaining that no
+          # POSTGRES_PASSWORD was set, its name leaves the network's DNS, and the
+          # backend fails with UnknownHostException: ci-db -- a misleading
+          # symptom of a misordered argument.
+          docker run -d --name ci-db --network ci-net \
             -e POSTGRES_USER=admin -e POSTGRES_PASSWORD=password123 \
-            -e POSTGRES_DB=delivery_db >/dev/null
+            -e POSTGRES_DB=delivery_db pgvector/pgvector:pg15 >/dev/null
           docker run -d --name ci-redis --network ci-net redis:7 >/dev/null
           docker run -d --name ci-backend --network ci-net \
             -e JWT_SECRET_KEY=ci-placeholder-key-not-used-for-a-real-deployment \
