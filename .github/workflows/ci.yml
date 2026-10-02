@@ -225,12 +225,15 @@ jobs:
 
           for i in $(seq 1 30); do
             if [ "$(docker inspect -f '{{.State.Running}}' ci-nokey)" != "true" ]; then
-              if docker logs ci-nokey 2>&1 | grep -q "Could not resolve placeholder 'JWT_SECRET_KEY'"; then
+              # Capture before grepping: `docker logs ... | grep -q` fails under
+              # `set -o pipefail` for the same SIGPIPE reason documented below.
+              docker logs ci-nokey > /tmp/ci-nokey.log 2>&1 || true
+              if grep -q "Could not resolve placeholder 'JWT_SECRET_KEY'" /tmp/ci-nokey.log; then
                 echo "refused to start, naming the missing variable"
                 exit 0
               fi
               echo "the container exited, but not for the expected reason:"
-              docker logs ci-nokey || true
+              cat /tmp/ci-nokey.log || true
               exit 1
             fi
             sleep 2
@@ -317,7 +320,13 @@ jobs:
             echo "health endpoint does not report the model as loaded: $body"
             exit 1
           }
-          echo "health endpoint: 200, model reported loaded ($body)"
+          # A hard-coded "loaded" with an empty forest would satisfy the check
+          # above, so the tree count has to be a positive number as well.
+          echo "$body" | grep -Eq '"fraudTrees":[1-9][0-9]*' || {
+            echo "health endpoint reports no loaded trees: $body"
+            exit 1
+          }
+          echo "health endpoint: 200, model reported loaded with trees ($body)"
 
           # A request the server cannot read is the caller's error. This answered
           # 500 until the advice stopped swallowing it, and a 500 here is a lie
@@ -351,7 +360,15 @@ jobs:
           # the model is loaded at startup and the service refuses to run
           # without it, so this log line is proof the detector is live in the
           # container and not merely present in the jar.
-          docker logs ci-backend 2>&1 | grep -q 'trajectory fraud model loaded' \
+          #
+          # The logs are captured to a file before grepping on purpose. Piping
+          # `docker logs` straight into `grep -q` is a trap under
+          # `set -o pipefail`: once the log is larger than the pipe buffer,
+          # `grep -q` exits at the first match, `docker logs` is killed by
+          # SIGPIPE, and pipefail reports the pipeline as failed even though the
+          # line was found. A file has no writer left to signal.
+          docker logs ci-backend > /tmp/ci-backend.log 2>&1 || true
+          grep -q 'trajectory fraud model loaded' /tmp/ci-backend.log \
             || { echo "no sign of the fraud model loading"; exit 1; }
           echo "the trajectory fraud model loaded inside the container"
 
