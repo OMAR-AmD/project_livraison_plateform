@@ -22,6 +22,27 @@
 
 \maketitle
 
+\section*{Note de réalité (état livré)}
+
+Ce document justifie l'axe retenu ; il a été rédigé avant le développement et
+décrit l'intention. L'état réellement livré et vérifiable est détaillé dans
+\texttt{argumentaire\_securite\_realiste.tex}. Trois écarts, assumés :
+
+\begin{itemize}
+    \item \textbf{HMAC, et non SHA-256} : un simple hash, recalculable par les
+    deux parties, ne prouve pas l'anti-répudiation. Le scellement livré est un
+    HMAC-SHA256 sous une clé détenue par le serveur, dérivée du secret racine et
+    distincte de la clé de signature des JWT.
+    \item \textbf{Évaluation dans la JVM, et non un microservice Python} : le
+    modèle de forêt aléatoire est entraîné hors-ligne en Python
+    (\texttt{ml/train\_fraud\_model.py}) puis évalué dans le processus Spring Boot
+    au fil des positions GPS. Un seul artefact à déployer, au lieu de deux.
+    \item \textbf{Row-Level Security non implémenté} : le cloisonnement par RLS
+    suppose une refonte du modèle de connexion (pool JPA mono-utilisateur) ; il
+    est listé comme hors périmètre dans l'argumentaire vérifiable. L'isolation
+    par rôle est assurée au niveau applicatif et contrôlée par des tests.
+\end{itemize}
+
 \section*{Introduction}
 Dans le cadre de la conception d'une plateforme de livraison (SwiftDeliver), se contenter des standards de sécurité classiques (Authentification JWT, HTTPS, hachage des mots de passe) ne constitue plus une innovation, mais un prérequis. Pour un ingénieur spécialisé en \textbf{Data Engineering et Intelligence Artificielle}, la véritable innovation réside dans le croisement entre la cybersécurité et la science des données : la \textbf{Cybersécurité Comportementale et Spatiale}. 
 
@@ -37,19 +58,19 @@ Résoudre ces failles nécessite l'ingestion et l'analyse de flux massifs de don
 Les téléphones des livreurs agissent comme des capteurs IoT générant un flux de données en temps réel.
 \begin{itemize}
     \item \textbf{L'approche classique :} Sauvegarder passivement la position.
-    \item \textbf{L'innovation Sécurité/Data :} Développer un pipeline de streaming (via Redis) qui compare en temps réel le flux GPS brut avec un graphe routier mathématique (OSRM). Un modèle algorithmique analyse la physique du mouvement pour détecter les "téléportations" (GPS Spoofing), les déviations injustifiées (suspicion de vol) ou les arrêts prolongés. L'IA protège ainsi l'intégrité physique et numérique des opérations.
+    \item \textbf{Retenue :} comparer en temps réel le flux GPS brut au flux attendu vers la destination (graphe routier OSRM). Une forêt aléatoire, entraînée hors-ligne et évaluée dans la JVM au fil des positions (voir la note de réalité), analyse la physique du mouvement pour détecter les "téléportations" (GPS Spoofing), les déviations injustifiées (suspicion de vol) ou les arrêts prolongés. L'IA protège ainsi l'intégrité physique et numérique des opérations.
 \end{itemize}
 
 \subsection{B. Preuve de Livraison Cryptographique (Proof of Delivery)}
 La répudiation (le client affirme ne rien avoir reçu, le livreur affirme avoir livré) est une vulnérabilité métier critique.
 \begin{itemize}
-    \item \textbf{L'innovation :} À l'instant de la livraison, le système génère un \textit{hash} cryptographique unique scellant les coordonnées GPS du livreur, celles du client, et un horodatage précis. Une validation algorithmique bloque la transaction si la distance excède un seuil de sécurité. C'est l'application de la cryptographie aux données spatiales pour garantir l'anti-répudiation.
+    \item \textbf{Retenu, sous forme renforcée :} à l'instant de la livraison, le système scelle par HMAC-SHA256 (et non un simple hash recalculable) les coordonnées GPS du livreur, celles du client, et un horodatage précis. Une validation algorithmique bloque la transaction si la distance excède un seuil de sécurité. C'est l'application de la cryptographie aux données spatiales pour garantir l'anti-répudiation.
 \end{itemize}
 
 \subsection{C. Zero Trust et Isolation des Données (Row-Level Security)}
 En complément de l'IA, l'architecture des données doit être nativement sécurisée.
 \begin{itemize}
-    \item \textbf{L'innovation :} Implémenter le \textit{Row-Level Security} (RLS) directement dans PostgreSQL. Plutôt que de confier la sécurité au code applicatif (souvent faillible), la base de données elle-même bloque physiquement l'accès aux flux de données d'un client A par un utilisateur B, illustrant une maîtrise avancée de l'ingénierie des bases de données.
+    \item \textbf{Piste non retenue (hors périmètre) :} implémenter le \textit{Row-Level Security} (RLS) directement dans PostgreSQL. Séduisant sur le principe, il suppose une refonte du modèle de connexion (pool JPA mono-utilisateur) et n'a pas été retenu ; l'isolation est assurée au niveau applicatif (contrôle par rôle et par propriété), contrôlée par des tests.
 \end{itemize}
 
 \section{Adéquation avec le Profil Data Engineering \& IA}

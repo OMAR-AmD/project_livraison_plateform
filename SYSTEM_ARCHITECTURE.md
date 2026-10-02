@@ -65,9 +65,21 @@ Delivery lifecycle, pricing, payment, and routing.
 | `ClientDeliveryController` | Client-facing endpoints |
 | `CourierDeliveryController` | Courier-facing endpoints |
 | `AdminDeliveryController` | Admin-facing endpoints |
+| `DeliveryProofService` | HMAC-SHA256 seal over a completed delivery, and re-derivation of it |
 | `dto/` | Request/response contracts |
 
 Controllers are split per role; all business logic lives in `DeliveryService`.
+
+> **Proof of delivery.** Reaching `DELIVERED` requires a GPS fix within 500 m of
+> the drop-off — taken from the request body or the courier's last broadcast —
+> and seals the event with an HMAC-SHA256 under a key *derived* from the root
+> secret, so the proof key and the JWT signing key are not the same key. A bare
+> SHA-256 digest was rejected: both parties can compute it, so it cannot prove
+> which of them produced the row. `GET /admin/deliveries/{id}/proof` re-derives
+> the seal from the stored row and reports whether it still holds (`verified`);
+> `409` means the delivery was never sealed. The client position endpoint checks
+> ownership and answers a foreign delivery exactly as it answers a missing one,
+> so it cannot be used to probe which ids exist.
 
 ### 2.3 `modules/notification/` — real-time messaging
 `NotificationService` maintains an `SseEmitter` per connected user and pushes on
@@ -76,7 +88,32 @@ endpoints. `EventSource` cannot set an `Authorization` header, so the stream
 also accepts the JWT as a `?token=` query parameter — the one place a token
 travels in a URL.
 
-### 2.4 `modules/ai/` — local RAG assistant
+### 2.4 `modules/ai/` — the trajectory fraud detector and the RAG assistant
+
+Two unrelated components share this package. Only the first is the innovation
+claimed in the written defence; the second is a convenience feature.
+
+**Trajectory fraud detector (the innovation).**
+
+| Class | Role |
+| :--- | :--- |
+| `TrajectoryFraudModel` | Loads the exported Random Forest from the gzipped resource; refuses to start if it is missing or unparsable |
+| `TrajectoryFraudService` | Turns a position update into the eight movement features and a `Verdict` (score, flag, speed) |
+| `TrajectoryFraudConfig` | Wires the loaded model into the Spring context |
+| `FraudTrailStore` | Keeps the per-delivery score history in Redis |
+
+Training is offline in Python (`ml/train_fraud_model.py`) and never happens at
+runtime — the JVM only evaluates. On every courier position update,
+`DeliveryService.updateCourierLocation()` calls `TrajectoryFraudService.evaluate(...)`
+and `FraudTrailStore.record(...)`. `GET /admin/deliveries/fraud-trails` lists
+deliveries that have a trail; `GET /admin/deliveries/{id}/fraud-trail` returns
+one curve and answers `409` if the delivery was never scored.
+`TrajectoryFraudModelTest` pins the Java arithmetic to scikit-learn's on exported
+vectors, which is what keeps the two implementations from drifting apart
+silently.
+
+**RAG assistant (convenience feature).**
+
 | Class | Role |
 | :--- | :--- |
 | `ChatService` | Retrieval + prompt assembly + LLM call |
@@ -104,7 +141,10 @@ startup.
 ### 2.5 `config/` — cross-cutting
 `SecurityConfig` (role-scoped paths), `JwtAuthenticationFilter`, `ApplicationConfig`
 (password encoder, `UserDetailsService`), `RedisConfig`, `WebSocketConfig` and
-`WebSocketAuthInterceptor` (JWT on the STOMP `CONNECT` frame).
+`WebSocketAuthInterceptor` (JWT on the STOMP `CONNECT` frame). `HealthController`
+is the one public 2xx path (`/api/v1/health`); it reports the number of trees the
+fraud model actually loaded, so a 200 that no longer carried that field would
+mean traffic was reaching an instance with no detector.
 
 ---
 
@@ -134,6 +174,12 @@ startup.
 | SSE stream | `notification/NotificationController.java` → `stream()` |
 | RAG retrieval + prompt | `ai/ChatService.java` → `chatWithClient()` |
 | Cancel tool (ownership-checked) | `ai/AiConfiguration.java` → `cancelDeliveryFunction()` |
+| Fraud scoring (in-process) | `ai/TrajectoryFraudService.java` → `evaluate()` |
+| Fraud score history (Redis) | `ai/FraudTrailStore.java` → `record()` |
+| Admin fraud trails | `delivery/AdminDeliveryController.java` → `getFraudTrailSummaries()` |
+| Seal proof of delivery | `delivery/DeliveryProofService.java` → `seal()` |
+| Re-verify a proof | `delivery/DeliveryService.java` → `getProof()` |
+| Liveness / model loaded | `config/HealthController.java` → `health()` |
 | Error envelope | `exception/GlobalExceptionHandler.java` |
 
 ---
