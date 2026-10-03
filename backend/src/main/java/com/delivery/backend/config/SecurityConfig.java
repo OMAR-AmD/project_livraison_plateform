@@ -37,6 +37,11 @@ public class SecurityConfig {
                 // it exposes liveness only, and widening it to "/api/v1/**" would
                 // quietly unauthenticate the entire API.
                 .requestMatchers("/api/v1/health").permitAll()
+                // Signing out has to know who is signing out, so it is the one
+                // /auth path that is not public. Listed before the wildcard below
+                // because the first matching rule wins; the other auth endpoints
+                // (login, register, verify) genuinely are open.
+                .requestMatchers("/api/v1/auth/logout").authenticated()
                 // Allow anyone to access the login and registration endpoints
                 .requestMatchers("/api/v1/auth/**").permitAll() 
                 // Persona-based routing for deliveries

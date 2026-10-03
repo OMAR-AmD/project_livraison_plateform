@@ -6,8 +6,12 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.HashMap;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,5 +98,92 @@ class JwtServiceTest {
 
         assertThrows(RuntimeException.class, () -> sb.extractUsername(token),
                 "a token must not verify under a different signing key");
+    }
+
+    // ------------------------------------------------------------------
+    // tokenVersion: turning a stateless token into one that can be revoked
+    // ------------------------------------------------------------------
+
+    /** The project's own User entity, which carries tokenVersion. */
+    private static com.delivery.backend.modules.auth.User accountAt(long version) {
+        com.delivery.backend.modules.auth.User user =
+                new com.delivery.backend.modules.auth.User("user@swift.com", "irrelevant-here", Role.CLIENT);
+        user.setTokenVersion(version);
+        return user;
+    }
+
+    private static JwtService usableService() {
+        JwtService service = serviceWithSecret("k".repeat(64));
+        service.checkSecretKey();
+        return service;
+    }
+
+    @Test
+    @DisplayName("a token records the account's session generation")
+    void aTokenRecordsTheAccountsSessionGeneration() {
+        JwtService service = usableService();
+        com.delivery.backend.modules.auth.User user = accountAt(3);
+
+        String token = service.generateToken(user);
+
+        assertEquals(3L, service.extractTokenVersion(token),
+                "the token has to carry the generation it was minted at");
+        assertTrue(service.isTokenValid(token, user));
+    }
+
+    /**
+     * The mutation this kills: removing the version comparison from
+     * {@code isTokenValid}. Without it, a token survives logout forever -- the
+     * exact hole this mechanism exists to close.
+     */
+    @Test
+    @DisplayName("bumping the session generation revokes tokens minted before it")
+    void bumpingTheSessionGenerationRevokesEarlierTokens() {
+        JwtService service = usableService();
+        com.delivery.backend.modules.auth.User user = accountAt(0);
+        String token = service.generateToken(user);
+        assertTrue(service.isTokenValid(token, user));
+
+        user.bumpTokenVersion(); // what logout does
+
+        assertFalse(service.isTokenValid(token, user),
+                "a token must not survive a logout that happened after it was minted");
+    }
+
+    /**
+     * The upgrade path. Tokens already in browsers have no {@code tv} claim, and
+     * treating a missing claim as "revoked" would sign every user out on deploy.
+     */
+    @Test
+    @DisplayName("a token with no version claim is read as generation zero")
+    void aTokenWithNoVersionClaimIsReadAsGenerationZero() {
+        JwtService service = usableService();
+        com.delivery.backend.modules.auth.User user = accountAt(0);
+
+        // Exactly what a token issued before versioning looked like: valid
+        // signature, no `tv` claim.
+        String legacy = service.generateToken(new HashMap<>(), user);
+
+        assertNull(service.extractTokenVersion(legacy));
+        assertTrue(service.isTokenValid(legacy, user),
+                "the upgrade must not sign out existing sessions");
+
+        user.bumpTokenVersion();
+        assertFalse(service.isTokenValid(legacy, user),
+                "but the first logout must revoke them too");
+    }
+
+    @Test
+    @DisplayName("a token for generation three is refused by an account at generation four")
+    void aStaleGenerationIsRefused() {
+        JwtService service = usableService();
+        com.delivery.backend.modules.auth.User user = accountAt(3);
+        String token = service.generateToken(user);
+
+        // Simulates a second device that logged in after this token was minted,
+        // then logged out, advancing the account past this token.
+        user.setTokenVersion(4);
+
+        assertFalse(service.isTokenValid(token, user));
     }
 }

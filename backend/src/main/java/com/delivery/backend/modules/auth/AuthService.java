@@ -99,6 +99,20 @@ public class AuthService {
         return new AuthResponse(token, user.getEmail(), user.getRole().name());
     }
 
+    /**
+     * Revokes every token issued to this account.
+     *
+     * <p>Logout could be entirely a browser-side act -- delete the token from
+     * storage -- but then a copy that was already captured keeps working until it
+     * expires. Bumping the account's session generation is what makes the token
+     * in the wild useless, at the cost of one row write.
+     */
+    @Transactional
+    public void logout(User user) {
+        user.bumpTokenVersion();
+        userRepository.save(user);
+    }
+
     @Transactional
     public void verifyEmail(String token) {
         User user = userRepository.findByVerificationToken(token)

@@ -21,6 +21,12 @@ public class JwtService {
     /** HS256 needs a key of at least 256 bits. */
     public static final int MIN_SECRET_BYTES = 32;
 
+    /**
+     * Claim holding the account's {@code tokenVersion} at mint time. Short
+     * because it rides in every token and is read on every request.
+     */
+    public static final String TOKEN_VERSION_CLAIM = "tv";
+
     // Injects the values straight from your application.yml
     @Value("${application.security.jwt.secret-key}")
     private String secretKey;
@@ -45,9 +51,33 @@ public class JwtService {
 
     /**
      * Generates a standard token with no extra data, just the user's details.
+     *
+     * <p>When the caller is one of our own accounts, the token also records the
+     * account's current {@code tokenVersion}, so the token can later be revoked
+     * by incrementing that counter. A generic {@link UserDetails} that is not our
+     * entity simply gets no such claim.
      */
     public String generateToken(UserDetails userDetails) {
-        return generateToken(new HashMap<>(), userDetails);
+        Map<String, Object> extraClaims = new HashMap<>();
+        if (userDetails instanceof User user) {
+            extraClaims.put(TOKEN_VERSION_CLAIM, user.getTokenVersion());
+        }
+        return generateToken(extraClaims, userDetails);
+    }
+
+    /**
+     * The version this token was minted with, or {@code null} for a token that
+     * predates versioning (or was minted for a non-{@link User} principal).
+     */
+    public Long extractTokenVersion(String token) {
+        Object value = extractClaim(token, claims -> claims.get(TOKEN_VERSION_CLAIM));
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return Long.valueOf(value.toString());
     }
 
     /**
@@ -65,11 +95,27 @@ public class JwtService {
     }
 
     /**
-     * Validates that the token belongs to the user making the request and hasn't expired.
+     * Validates that the token belongs to the user making the request, hasn't
+     * expired, and was issued for the account's current session generation.
+     *
+     * <p>The version check is the only server-side lever over an otherwise
+     * stateless token. A token minted before the account's last logout carries a
+     * stale {@code tv} and is refused here even though its signature and expiry
+     * are perfectly good. A token with no {@code tv} at all is read as version
+     * zero, which is what every account starts at, so tokens issued before this
+     * mechanism existed survive until that account's first logout.
      */
     public boolean isTokenValid(String token, UserDetails userDetails) {
         final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername())) && !isTokenExpired(token);
+        if (!username.equals(userDetails.getUsername()) || isTokenExpired(token)) {
+            return false;
+        }
+        if (userDetails instanceof User user) {
+            Long issuedVersion = extractTokenVersion(token);
+            long version = issuedVersion == null ? 0L : issuedVersion;
+            return version == user.getTokenVersion();
+        }
+        return true;
     }
 
     private boolean isTokenExpired(String token) {

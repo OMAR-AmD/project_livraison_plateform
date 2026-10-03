@@ -1,5 +1,6 @@
 package com.delivery.backend.exception;
 
+import com.delivery.backend.modules.auth.RateLimitExceededException;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.MalformedJwtException;
@@ -47,6 +48,24 @@ public class GlobalExceptionHandler {
             LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
+     * Too many failed sign-ins from this account or client. 429 with a
+     * {@code Retry-After} the caller can act on, rather than another 401, which
+     * would read as "wrong password" and invite the next guess.
+     */
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimited(RateLimitExceededException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.TOO_MANY_REQUESTS.value(),
+            "Too many requests",
+            ex.getMessage(),
+            LocalDateTime.now()
+        );
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(error);
     }
 
     @ExceptionHandler(ExpiredJwtException.class)

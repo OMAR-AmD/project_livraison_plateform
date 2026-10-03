@@ -340,6 +340,21 @@ UPDATE users SET role = 'LIVREUR' WHERE email = 'you@example.com';
 
 Log out and back in afterwards, because the role is baked into the JWT at login.
 
+### Session security
+
+Tokens are stateless but not irrevocable. Signing out (`POST /api/v1/auth/logout`)
+bumps a per-account `tokenVersion` on the user; `JwtService` embeds it as the `tv`
+claim and refuses any token whose claim no longer matches. A token captured before
+sign-out is therefore dead afterwards, on every device, not merely forgotten by the
+browser that signed out. A token minted before this feature has no `tv` claim and
+is read as version 0 rather than signing every account out on upgrade.
+
+Failed sign-ins are rate-limited in memory (5 per account, 50 per client address,
+in a 15-minute window). The account counter is the primary control because it
+cannot be spoofed with an `X-Forwarded-For` header, and a successful sign-in
+clears it. The window resets on restart and is per-instance — a deliberate
+trade-off for the single-instance free tier, documented rather than hidden.
+
 ---
 
 ## 📚 Documentation

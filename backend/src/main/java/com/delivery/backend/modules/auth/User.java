@@ -58,6 +58,28 @@ public class User implements UserDetails {
     @Column(name = "token_expires_at")
     private LocalDateTime tokenExpiresAt;
 
+    /**
+     * Session generation for this account: how a stateless token gets revoked.
+     *
+     * <p>A JWT is valid to the server until it expires, with nothing stored to
+     * delete when the user signs out; deleting it in the browser only stops that
+     * one browser from using it. The copy that already left the server keeps
+     * working. This counter fixes that: every token carries the value it was
+     * minted with in its {@code tv} claim, and a token whose claim no longer
+     * matches the account row is refused. Incrementing it therefore invalidates
+     * every token issued so far, which is what makes logout a server-side act
+     * rather than a local one.
+     *
+     * <p>Nullable on purpose. {@code ddl-auto: update} adds this column to a
+     * {@code users} table that already holds rows, and a {@code NOT NULL} column
+     * without a default cannot be added to a non-empty table. Hibernate writes 0
+     * for every new row and {@link #getTokenVersion()} reads a pre-existing NULL
+     * as 0, so tokens issued before the column existed stay valid until the
+     * account's first logout -- the upgrade does not sign everyone out.
+     */
+    @Column(name = "token_version")
+    private Long tokenVersion = 0L;
+
     public User() {}
 
     public User(String email, String password, Role role) {
@@ -129,4 +151,17 @@ public class User implements UserDetails {
 
     public LocalDateTime getTokenExpiresAt() { return tokenExpiresAt; }
     public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
+
+    public long getTokenVersion() {
+        return tokenVersion == null ? 0L : tokenVersion;
+    }
+
+    public void setTokenVersion(long tokenVersion) {
+        this.tokenVersion = tokenVersion;
+    }
+
+    /** Invalidates every token issued to this account so far. */
+    public void bumpTokenVersion() {
+        this.tokenVersion = getTokenVersion() + 1;
+    }
 }

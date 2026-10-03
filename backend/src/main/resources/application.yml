@@ -77,6 +77,15 @@ application:
       # For local development:  export JWT_SECRET_KEY=$(openssl rand -hex 32)
       secret-key: ${JWT_SECRET_KEY}
       expiration: ${JWT_EXPIRATION:86400000}
+    # Failed-sign-in limiter. Both counters are windows, in seconds, and both
+    # reset on a successful sign-in (per account) or when the window passes.
+    # The per-client limit is much looser than the per-account one because a
+    # shared address makes innocent users share it. Overridable so the limit can
+    # be tightened for a demo without editing code.
+    login-rate-limit:
+      max-per-account: ${LOGIN_MAX_PER_ACCOUNT:5}
+      max-per-client: ${LOGIN_MAX_PER_CLIENT:50}
+      window-seconds: ${LOGIN_WINDOW_SECONDS:900}
   proof:
     # Root secret for the delivery-proof MAC (see DeliveryProofService). The key
     # actually used to seal is derived from this value rather than being equal to

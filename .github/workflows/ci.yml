@@ -299,6 +299,54 @@ jobs:
           fi
           echo "signed in as the seeded admin, token of ${#token} characters"
 
+          # Signing out has to revoke the token server-side; otherwise "log out"
+          # only means "forgot it in this browser". The SAME token is replayed
+          # after the call and must be refused, then a fresh sign-in must work.
+          # Both directions are asserted so neither a no-op logout nor a broken
+          # sign-in can pass.
+          logout_code=$(docker exec ci-backend curl -sS --max-time 10 \
+            -o /dev/null -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $token" \
+            http://localhost:8080/api/v1/auth/logout)
+          [ "$logout_code" = "200" ] || {
+            echo "logout answered $logout_code, expected 200"
+            exit 1
+          }
+          revoked=$(docker exec ci-backend curl -sS --max-time 10 \
+            -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $token" \
+            http://localhost:8080/api/v1/users/me)
+          case "$revoked" in
+            401|403) echo "the revoked token is refused ($revoked)" ;;
+            *) echo "a token still works after logout: $revoked"; exit 1 ;;
+          esac
+          token=$(docker exec ci-backend curl -sS --max-time 10 \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@swift.com","password":"password123"}' \
+            http://localhost:8080/api/v1/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+          [ -n "$token" ] || { echo "could not sign in again after logout"; exit 1; }
+
+          # The failed-sign-in limiter: the early guesses are 401 and the one
+          # past the threshold is 429. A limiter that does nothing would answer
+          # 401 again; a stuck one would refuse the first guess. Only a working
+          # limiter produces this exact sequence.
+          for i in 1 2 3 4 5; do
+            docker exec ci-backend curl -sS --max-time 10 -o /dev/null \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"nobody-ci@example.com","password":"wrong"}' \
+              http://localhost:8080/api/v1/auth/login || true
+          done
+          limited=$(docker exec ci-backend curl -sS --max-time 10 \
+            -o /dev/null -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"nobody-ci@example.com","password":"wrong"}' \
+            http://localhost:8080/api/v1/auth/login)
+          [ "$limited" = "429" ] || {
+            echo "a failed-login burst answered $limited, expected 429"
+            exit 1
+          }
+          echo "the failed-login limiter answers 429 after the threshold"
+
           # The hosting platform decides whether to send traffic based on a 2xx
           # from a health path, and every pre-existing route answers 403/404/405
           # to an unauthenticated GET. So this is checked in the container rather

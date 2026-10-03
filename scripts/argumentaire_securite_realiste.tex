@@ -43,8 +43,8 @@ Cloud public &
 \texttt{python scripts/check\_render\_blueprint.py render.yaml} v\'erifie en CI la coh\'erence interne (chaque variable pointe vers un service d\'eclar\'e). Sch\'ema complet~: \texttt{python scripts/validate\_render\_blueprint.py render.yaml}. \\
 \hline
 S\'ecurit\'e standard &
-JWT HS256 dont la cl\'e \emph{n'a aucune valeur par d\'efaut} (l'application refuse de d\'emarrer sans elle)~; RBAC par pr\'efixe de route (\texttt{SecurityConfig})~; secrets uniquement en variables d'environnement (\texttt{.env} ignor\'e, \texttt{.env.example} fourni)~; mots de passe hach\'es en BCrypt~; validation Bean des entr\'ees~; r\'eponses construites en DTO, jamais l'entit\'e \texttt{User}. &
-\texttt{JwtServiceTest}~; \texttt{HealthEndpointTest} v\'erifie que \emph{seul} \texttt{/api/v1/health} est public~; la CI prouve qu'un conteneur sans cl\'e de signature refuse de d\'emarrer. \\
+JWT HS256 dont la cl\'e \emph{n'a aucune valeur par d\'efaut} (l'application refuse de d\'emarrer sans elle)~; RBAC par pr\'efixe de route (\texttt{SecurityConfig})~; secrets uniquement en variables d'environnement (\texttt{.env} ignor\'e, \texttt{.env.example} fourni)~; mots de passe hach\'es en BCrypt~; validation Bean des entr\'ees~; r\'eponses construites en DTO, jamais l'entit\'e \texttt{User}~; d\'econnexion qui r\'evoque c\^ot\'e serveur (\texttt{tokenVersion} incr\'ement\'e, claim \texttt{tv} v\'erifi\'e \`a chaque requ\^ete)~; limitation de d\'ebit des connexions \'echou\'ees (5 par compte, 50 par adresse). &
+\texttt{JwtServiceTest} (dont la r\'evocation par \texttt{tokenVersion})~; \texttt{LoginRateLimiterTest} (9 cas de politique)~; \texttt{HealthEndpointTest} v\'erifie que \emph{seul} \texttt{/api/v1/health} est public~; la CI rejoue dans le conteneur la d\'econnexion (jeton refus\'e apr\`es) et le 429 apr\`es cinq \'echecs~; un conteneur sans cl\'e de signature refuse de d\'emarrer. \\
 \hline
 Robustesse &
 \texttt{GlobalExceptionHandler} s\'epare les erreurs du client des pannes serveur~: validation, corps illisible, param\`etre manquant et type de chemin incorrect renvoient 400~; route inconnue, 404~; verbe incorrect, 405~; d\'ependance aval indisponible, 503. &
@@ -103,10 +103,11 @@ C'est ce couplage qui change l'usage~: le mod\`ele d\'etecte une fraude \emph{pe
 
 \subsection{R\'esultats v\'erifi\'es}
 \begin{itemize}[leftmargin=1.4em]
-  \item Tests backend~: \textbf{50/50} (\texttt{cd backend \&\& ./mvnw test}), dont 9 sur le sceau et 4 sur les erreurs de requ\^ete.
+  \item Tests backend~: \textbf{63/63} (\texttt{cd backend \&\& ./mvnw test}), dont 9 sur le sceau, 8 sur la r\'evocation de jeton, 9 sur la limitation de d\'ebit et 4 sur les erreurs de requ\^ete.
   \item D\'etection en direct~: \textbf{7/7} (\texttt{node verify\_fraud\_live.js}) --- une trajectoire honn\^ete ferme sans alerte, la m\^eme livraison avec un saut impossible d\'eclenche une alerte. Les deux verdicts doivent diff\'erer~: un d\'etecteur bloqu\'e \`a 0 \'echoue le second, bloqu\'e \`a 1 il \'echoue le premier.
   \item Panneau de fraude~: \textbf{14/14} (\texttt{node verify\_fraud\_panel.js}), qui v\'erifie aussi que le panneau d\'eclare ses donn\'ees d'entra\^inement comme synth\'etiques.
   \item Preuve de livraison~: \textbf{23/23} (\texttt{node verify\_proof.js}) --- refus \`a 3~km, refus sans position, scellement \`a la porte via le m\^eme chemin que l'interface, v\'erification du sceau apr\`es un aller-retour en base, et deux livraisons au m\^eme endroit qui ne partagent pas le m\^eme sceau.
+  \item Durcissement de l'authentification~: \textbf{11/11} (\texttt{node verify\_auth\_hardening.js}) --- le m\^eme jeton est accept\'e avant la d\'econnexion, refus\'e apr\`es, et un jeton neuf fonctionne~; cinq mauvais mots de passe r\'epondent 401 et le sixi\`eme r\'epond 429 avec un \texttt{Retry-After}. Les deux sens sont test\'es pour qu'aucune r\'eponse constante ne passe.
 \end{itemize}
 
 \section{Acquis, pr\'evu, et limites assum\'ees}
@@ -123,9 +124,9 @@ Correction IDOR & Position d'autrui inaccessible. & F \\
 \hline
 Erreurs client en 500 & Corrig\'e~: corps illisible, param\`etre manquant et mauvais type de chemin renvoient 400. & F \\
 \hline
-Limitation de d\'ebit sur le login & Contre la force brute. Non impl\'ement\'ee~: c'est la principale lacune restante de la partie s\'ecurit\'e. & P \\
+Limitation de d\'ebit sur le login & Contre la force brute~: 5 essais par compte et 50 par adresse sur 15~minutes, compteur en m\'emoire remis \`a z\'ero par un succ\`es. Reset au red\'emarrage et par instance~: compromis assum\'e pour la mono-instance gratuite, pas une omission. V\'erifi\'e par \texttt{verify\_auth\_hardening.js} et par la CI. & F \\
 \hline
-R\'evocation de session (\texttt{tokenVersion}) & Un jeton vol\'e reste valide jusqu'\`a expiration. Non impl\'ement\'e. & P \\
+R\'evocation de session (\texttt{tokenVersion}) & La d\'econnexion incr\'emente une version par compte, embarqu\'ee dans le JWT (claim \texttt{tv}) et v\'erifi\'ee \`a chaque requ\^ete~: un jeton vol\'e meurt \`a la d\'econnexion, sur tous les appareils. Un jeton ant\'erieur sans claim est lu comme version~0, pour ne pas d\'econnecter tout le monde lors de la mont\'ee de version. V\'erifi\'e par \texttt{verify\_auth\_hardening.js} et par la CI. & F \\
 \hline
 Code de remise (OTP) & Confirmation par le client en plus du livreur. Non impl\'ement\'e. & P \\
 \hline
@@ -149,8 +150,8 @@ Toutes les valeurs cit\'ees sont r\'eimprim\'ees par un script, sur un jeu de te
 \begin{itemize}[leftmargin=1.4em]
   \item \texttt{python ml/supervised\_vs\_unsupervised.py} --- imprime le tableau des quatre d\'etecteurs et le d\'etail par sc\'enario (dont \emph{drift\_then\_vanish} et le d\'elai d'alerte). C'est la preuve du rejet de l'Isolation Forest.
   \item \texttt{python ml/train\_fraud\_model.py} --- r\'eentra\^ine et r\'e\'ecrit le mod\`ele et les 200 vecteurs de parit\'e.
-  \item \texttt{cd backend \&\& ./mvnw test} --- 50 tests, dont la parit\'e Java/scikit-learn, le sceau et les erreurs de requ\^ete.
-  \item \texttt{node verify\_fraud\_live.js}, \texttt{verify\_fraud\_panel.js}, \texttt{verify\_proof.js}, \texttt{verify\_pages.js}, \texttt{verify\_assign.js}, \texttt{verify\_stats.js} --- v\'erifications contre la pile en marche.
+  \item \texttt{cd backend \&\& ./mvnw test} --- 63 tests, dont la parit\'e Java/scikit-learn, le sceau, la r\'evocation de jeton, la limitation de d\'ebit et les erreurs de requ\^ete.
+  \item \texttt{node verify\_fraud\_live.js}, \texttt{verify\_fraud\_panel.js}, \texttt{verify\_proof.js}, \texttt{verify\_auth\_hardening.js}, \texttt{verify\_pages.js}, \texttt{verify\_assign.js}, \texttt{verify\_stats.js} --- v\'erifications contre la pile en marche.
   \item \texttt{python scripts/check\_render\_blueprint.py render.yaml} --- coh\'erence du blueprint Cloud.
 \end{itemize}
 

@@ -20,7 +20,7 @@ import {
   useCallback,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { loginUser, registerUser, fetchCurrentUser } from '@/lib/api';
+import { loginUser, registerUser, fetchCurrentUser, logoutUser } from '@/lib/api';
 
 const AuthContext = createContext(undefined);
 
@@ -110,8 +110,18 @@ export function AuthProvider({ children }) {
 
   /**
    * Sign out — clears all client-side auth state and redirects to /login.
+   *
+   * The backend call revokes the token server-side (bumps the account's session
+   * generation) so a copy captured elsewhere stops working. It is awaited but
+   * its failure is swallowed: if the network is down, or the token is already
+   * expired, the user must still be signed out locally rather than trapped.
    */
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await logoutUser();
+    } catch {
+      // Best-effort revocation; local sign-out below must still happen.
+    }
     localStorage.removeItem('token');
     setUser(null);
     setToken(null);

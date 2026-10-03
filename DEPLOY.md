@@ -91,6 +91,29 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' -d '{"email": '
 # expected: 400
+
+# 5. Signing out revokes the token, and a failed-login burst is cut off.
+#    Both controls are server-side, so neither is visible by clicking around.
+#    Note: signing out ends every admin session, including this one.
+TOKEN=$(curl -s -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@swift.com","password":"password123"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+curl -s -o /dev/null -w 'logout:  %{http_code}\n' -X POST \
+  https://swiftdeliver-backend.onrender.com/api/v1/auth/logout \
+  -H "Authorization: Bearer $TOKEN"                       # expected: 200
+curl -s -o /dev/null -w 'revoked: %{http_code}\n' \
+  https://swiftdeliver-backend.onrender.com/api/v1/users/me \
+  -H "Authorization: Bearer $TOKEN"                       # expected: 401 or 403
+for i in 1 2 3 4 5; do
+  curl -s -o /dev/null -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"nobody@example.com","password":"wrong"}' || true
+done
+curl -s -o /dev/null -w 'limited: %{http_code}\n' -X POST \
+  https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"nobody@example.com","password":"wrong"}'   # expected: 429
 ```
 
 Then open the frontend URL, sign in as `admin@swift.com` / `password123`, and
@@ -140,6 +163,18 @@ this free tier. The assistant degrades — it reports itself unavailable rather
 than erroring — and the rest of the platform, including the fraud detection,
 is unaffected. The innovation is the fraud model, which is pure Java evaluated
 in-process and has no such dependency.
+
+**The database has a 30-day life.** Render deletes a free Postgres after 30 days
+with no backup: the accounts created through `/register`, the orders, the seals
+and the `tokenVersion` values all go. The demo seeder restores `admin@swift.com`,
+the `courier1/2` and `client1..3` accounts and the demo orders on the next start,
+but it does not re-create a sealed delivery, so a proof demonstration needs a
+courier run first. More bluntly, once the database is gone the backend never
+reaches Tomcat (`ddl-auto: update` runs during startup), so the whole site answers
+502 until the database is recreated. Recreate it — or re-Apply the blueprint —
+within 30 days of any demonstration. That is a limit of the free tier, not a
+defect in the code, and the honest thing is to say so rather than discover it in
+front of an examiner.
 
 **Regions.** `frankfurt` is set per-resource, not once at the root, and cannot be
 changed after creation. It is the lowest-latency region for a European audience

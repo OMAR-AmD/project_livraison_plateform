@@ -134,6 +134,26 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<!--
+				The context-load test boots the real application, and the
+				application deliberately refuses to start without a signing key
+				(a well-known default would be a forgeable one). CI exports a
+				random key before the build; this gives a local `./mvnw test` the
+				same ability without a manual export.
+
+				The value below is a fixed throwaway: it is plainly not a
+				deployment secret, it exists only in the forked test JVM, and it
+				never reaches the packaged jar or the running application, which
+				still requires JWT_SECRET_KEY at start-up.
+			-->
+			<plugin>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<environmentVariables>
+						<JWT_SECRET_KEY>test-only-signing-key-not-used-in-any-deployment-0123456789</JWT_SECRET_KEY>
+					</environmentVariables>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 

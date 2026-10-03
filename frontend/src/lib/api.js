@@ -104,6 +104,19 @@ export async function registerUser(email, password, role) {
 }
 
 /**
+ * Ask the server to revoke every token issued to this account.
+ *
+ * Clearing localStorage is not enough on its own: a token that has already left
+ * the browser stays valid until it expires. This bumps the account's session
+ * generation so the copy in the wild is refused. Best-effort by design — the
+ * caller clears local state regardless, because a failed revocation must not
+ * leave the user stuck in a signed-in shell.
+ */
+export async function logoutUser() {
+  return apiFetch('/auth/logout', { method: 'POST' });
+}
+
+/**
  * Fetch the currently authenticated user profile.
  * Requires a valid token in localStorage.
  * @returns {{ email: string, role: string }}
