@@ -41,6 +41,13 @@ const PASSWORD = 'password123';
 const FIX_INTERVAL_MS = 10000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The probe deliveries are deleted by default: a verification run must not
+// litter the database. The demo needs the opposite — after the script exits,
+// the dispatcher has to be able to open the fleet table and SEE the two tags.
+// `KEEP=1` opts out of the cleanup and prints the ids so they can be removed
+// afterwards. The default is unchanged, so an ordinary run still cleans up.
+const KEEP = /^(1|true|yes)$/i.test(process.env.KEEP || '');
+
 const results = [];
 const check = (name, pass, detail = '') => {
   results.push([pass, name, detail]);
@@ -271,9 +278,14 @@ async function main() {
     check('a courier cannot read the fleet-wide monitor', courierCanRead.status === 403,
       `HTTP ${courierCanRead.status}`);
   } finally {
-    for (const id of [honestId, fraudId, untouchedId]) {
-      const r = await fetch(`${API}/admin/deliveries/${id}`, { method: 'DELETE', headers: adminHeaders });
-      console.log(`  cleanup ${id.slice(0, 8)}: HTTP ${r.status}`);
+    if (KEEP) {
+      console.log('  KEEP=1: probes left in place for the live panel');
+      console.log(`  KEEP_IDS=${[honestId, fraudId, untouchedId].join(',')}`);
+    } else {
+      for (const id of [honestId, fraudId, untouchedId]) {
+        const r = await fetch(`${API}/admin/deliveries/${id}`, { method: 'DELETE', headers: adminHeaders });
+        console.log(`  cleanup ${id.slice(0, 8)}: HTTP ${r.status}`);
+      }
     }
   }
 

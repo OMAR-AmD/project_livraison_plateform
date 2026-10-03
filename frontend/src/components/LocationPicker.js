@@ -3,6 +3,20 @@ import dynamic from 'next/dynamic';
 
 const LocationPickerMap = dynamic(() => import('./LocationPickerMap'), { ssr: false });
 
+// Nominatim answers with the full administrative hierarchy in every local
+// script. For Casablanca that is French + Arabic + Tifinagh and it routinely
+// runs past the 255-character column on the order, so the insert failed and the
+// server masked it as "a record already exists" (a 409), which points nowhere
+// useful. Keep the first few meaningful components and cap the length: the
+// address is a human label for the order, not a geocoding record.
+const MAX_ADDRESS_CHARS = 200;
+
+function formatAddress(raw) {
+  const parts = (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const joined = parts.slice(0, 3).join(', ') || (raw || '').trim();
+  return joined.length > MAX_ADDRESS_CHARS ? joined.slice(0, MAX_ADDRESS_CHARS) : joined;
+}
+
 export default function LocationPicker({ label, placeholder, address, lat, lng, onLocationChange }) {
   const [query, setQuery] = useState(address || '');
   const [suggestions, setSuggestions] = useState([]);
@@ -45,7 +59,7 @@ export default function LocationPicker({ label, placeholder, address, lat, lng, 
   const handleSelectSuggestion = (suggestion) => {
     const newLat = parseFloat(suggestion.lat);
     const newLng = parseFloat(suggestion.lon);
-    const newAddress = suggestion.display_name;
+    const newAddress = formatAddress(suggestion.display_name);
     
     setQuery(newAddress);
     setShowSuggestions(false);
@@ -59,9 +73,10 @@ export default function LocationPicker({ label, placeholder, address, lat, lng, 
       const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newLat}&lon=${newLng}`);
       const data = await res.json();
       if (data && data.display_name) {
-        setQuery(data.display_name);
+        const formatted = formatAddress(data.display_name);
+        setQuery(formatted);
         setShowSuggestions(false);
-        onLocationChange({ address: data.display_name, lat: newLat, lng: newLng });
+        onLocationChange({ address: formatted, lat: newLat, lng: newLng });
       }
     } catch (err) {
       console.error("Reverse geocoding error:", err);

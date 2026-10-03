@@ -1,16 +1,20 @@
 package com.delivery.backend.modules.delivery.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public class DeliveryRequest {
 
     @NotBlank(message = "Description is required")
+    @Size(max = 255, message = "Description must be at most 255 characters")
     private String description;
 
     @NotBlank(message = "Pickup address is required")
+    @Size(max = 255, message = "Pickup address must be at most 255 characters")
     private String pickupAddress;
 
     @NotBlank(message = "Dropoff address is required")
+    @Size(max = 255, message = "Dropoff address must be at most 255 characters")
     private String dropoffAddress;
 
     private Double pickupLat;

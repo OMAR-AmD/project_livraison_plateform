@@ -1,7 +1,8 @@
 # SwiftDeliver — demo runbook
 
 A solo demo that fits in about ten minutes. Every duration below was measured on
-the local stack during a full rehearsal, not estimated.
+the local stack during a full rehearsal, not estimated. The ordering is the one
+validated end-to-end by `frontend/rehearse_demo.js` (see "Full rehearsal" below).
 
 Accounts (password `password123`): `admin@swift.com`, `courier1@swift.com`,
 `courier2@swift.com`, `client1@swift.com`, `client2@swift.com`,
@@ -23,6 +24,14 @@ Accounts (password `password123`): `admin@swift.com`, `courier1@swift.com`,
 The assistant is a **local-only** feature (Ollama lives on the host); the cloud
 deployment has no Ollama, so demo the chat locally.
 
+Optional but recommended: run the whole sequence once as a rehearsal. It plays
+the real UI and the real scripts in order and timestamps every phase:
+
+```bash
+cd frontend
+node rehearse_demo.js
+```
+
 ---
 
 ## 1. Cloud + CI/CD (~2 min, no login)
@@ -39,24 +48,53 @@ deployed — two web services, `autoDeployTrigger: checksPass`.
 
 ---
 
-## 2. Baseline booking (~1.5 min) — `client1@swift.com`
+## 2. Security (~1 min) — run this FIRST
+
+Security comes before any dashboard is opened, deliberately:
+`verify_auth_hardening.js` signs out `admin@swift.com`, which revokes any admin
+browser session. If it ran last, the admin tab would be dead for the rest of the
+demo. Run first, it is invisible.
+
+```bash
+cd frontend
+node verify_auth_hardening.js   # measured 1.1 s, 11/11
+node verify_proof.js            # measured 1.5 s, 23/23
+```
+
+* sign-out bumps `tokenVersion`; the **same** token is then refused (403), a
+  fresh sign-in works;
+* the 6th wrong password in 15 min → **429** with `Retry-After: 900`;
+* a delivery proof is an HMAC over the sealed fields and re-verifies via
+  `GET /api/v1/admin/deliveries/{id}/proof`.
+
+It uses a throwaway account for the rate-limit test, so no demo account is ever
+locked.
+
+---
+
+## 3. Baseline booking (~1.5 min) — `client1@swift.com`
 
 1. **My deliveries** → **New delivery**.
-2. Description e.g. `Demo parcel`; pick **Anfa** as pickup and **Centre** as
-   drop-off on the map (or use the map click).
-3. **Continue to payment** — the price comes from the server (measured 29.00 MAD
-   for Anfa→Centre; quote latency **0.05 s**).
-4. Confirm payment. Measured **0.05 s** to create + **4.2 s** to capture and
-   auto-dispatch; the order flips to `ASSIGNED` and a courier appears on it
-   (the dispatcher balances the fleet, so it may be courier2 with courier1
-   already loaded).
+2. Description e.g. `Demo parcel`; set pickup and drop-off by **clicking the
+   map**. Click the map, wait for the address box to fill, repeat for the second
+   point.
+3. **Continue to payment** — the price comes from the server (measured 0.3–0.4 s;
+   ~29–32 MAD for two Casablanca points).
+4. Confirm payment. Measured **4.6 s** to create + capture; the order flips to
+   `ASSIGNED` and a courier appears on it (the dispatcher balances the fleet, so
+   it may be courier2 with courier1 already loaded).
+
+**Do not type "Centre, Casablanca".** Nominatim resolves it to the Centre region
+of **Cameroon**; the road route then exceeds the 45-minute limit and checkout
+refuses to open. If you prefer to type, use full unambiguous queries
+(`Anfa, Casablanca, Morocco`) and check the pin lands inside the city.
 
 Talking point: the order is unpaid until capture; dispatch runs only after
 payment, so a failed checkout never occupies a courier.
 
 ---
 
-## 3. Live tracking (~1.5 min) — two windows
+## 4. Live tracking (~1.5 min) — two windows
 
 1. **client1** — the inline live section is already on **My deliveries**; it
    reads `Connecting…` and is section-sized (measured **340 px**, section
@@ -66,7 +104,7 @@ payment, so a failed checkout never occupies a courier.
    *Simulating GPS*, and the courier starts broadcasting along the OSRM route
    (optimiser **2.1 s**, OSRM proxy **0.04 s**).
 3. Back on **client1** — the section turns `Live · <time>` with the courier
-   marker. Measured end-to-end for this path via the UI check: **16 s**.
+   marker. Measured **4.7 s** from *Start delivery* to `Live` in the rehearsal.
 
 Note: the simulation reaches the destination and auto-marks the order
 `DELIVERED`. A long route at the 1 s cadence takes ~72 s off-peak and ~215 s in
@@ -75,17 +113,21 @@ client1 always has an active one.
 
 ---
 
-## 4. AI fraud detection (~1.5 min) — the graded innovation
+## 5. AI fraud detection (~1.5 min) — the graded innovation
 
 The courier's own simulation follows the real road, so it is honest by
 construction. A fraudulent trajectory is produced by the scripted probe, which
 drives **one honest** and **one impossible** trajectory on the same model, same
-session:
+session. Run it with `KEEP=1` so the three probe rows are still there when you
+open the fleet table — by default the script deletes them, and then there is
+nothing to show:
 
 ```bash
 cd frontend
-node verify_fraud_panel.js     # measured 65.6 s (50 s of it the real 10 s cadence)
+KEEP=1 node verify_fraud_panel.js     # measured 65.8 s (50 s of it the real 10 s cadence)
 ```
+
+PowerShell: `$env:KEEP=1; node verify_fraud_panel.js`.
 
 Then, as `admin@swift.com` → **Fleet overview**:
 
@@ -95,6 +137,9 @@ Then, as `admin@swift.com` → **Fleet overview**:
 * click the tag → **Trajectory risk** modal: the per-fix score curve, the
   threshold the decisions were taken against, "not proof of wrongdoing", and
   "Training data is synthetic".
+
+Clean up after the demo with the **Delete** button on the three `PANEL-*` rows.
+A run without `KEEP=1` cleans up after itself.
 
 Same check standalone: `node verify_fraud_live.js` (runs ~6 min — a ~4 min honest
 pass at the real cadence plus a ~2 min stall-then-vanish pass; it proves the two
@@ -107,27 +152,6 @@ rule.
 
 ---
 
-## 5. Security (~1 min)
-
-```bash
-cd frontend
-node verify_auth_hardening.js   # measured 1.2 s, 11/11
-node verify_proof.js            # measured 1.5 s, 23/23
-```
-
-* sign-out bumps `tokenVersion`; the **same** token is then refused (403), a
-  fresh sign-in works;
-* the 6th wrong password in 15 min → **429** with `Retry-After: 900`;
-* a delivery proof is an HMAC over the sealed fields and re-verifies via
-  `GET /api/v1/admin/deliveries/{id}/proof`.
-
-**Ordering warning:** `verify_auth_hardening.js` signs out `admin@swift.com`,
-which revokes any admin browser session. Run it **before** you open the admin
-dashboard, or simply sign in again afterwards. It uses a throwaway account for
-the rate-limit test, so no demo account is ever locked.
-
----
-
 ## 6. Assistant (~1 min) — `client1@swift.com`
 
 Ask, in the chat widget:
@@ -137,37 +161,63 @@ Ask, in the chat widget:
 * *What is the refund policy if my delivery is late?* → 10 % over 10 min, full
   refund over 45 min
 
-Measured: first (cold) answer **21.6 s**, subsequent **3.4–5.8 s**. Answers are
-retrieved from `faq.txt` via pgvector and generated by `llama3.1:8b` on the
-RTX 4060 (100 % GPU). Zero cost.
+Measured: first (cold) answer **21.6 s**, warm **7.1 s** in the timed rehearsal.
+Answers are retrieved from `faq.txt` via pgvector and generated by `llama3.1:8b`
+on the RTX 4060 (100 % GPU). Zero cost.
 
 ---
 
 ## Run-of-show timing
 
-| # | Segment | Measured |
-| :- | :--- | :--- |
-| 1 | Cloud + CI | ~2 min (browsing) |
-| 2 | Booking + auto-dispatch | ~1.5 min (quote 0.05 s, pay 4.2 s) |
-| 3 | Live tracking | ~1.5 min (UI path 16 s) |
-| 4 | AI fraud panel | ~1.5 min (script 65.6 s) |
-| 5 | Security | ~1 min (checks 2.7 s combined) |
-| 6 | Assistant | ~1 min (cold 21.6 s, warm ~4 s) |
-| | **Total** | **~8.5 min** + talking |
+| # | Segment | Mechanical | On stage |
+| :- | :--- | :--- | :--- |
+| 1 | Cloud + CI | — | ~2 min (browsing) |
+| 2 | Security (first) | 2.6 s (two scripts) | ~1 min |
+| 3 | Booking + auto-dispatch | 10.6 s (quote 0.3 s, pay 4.6 s) | ~1.5 min |
+| 4 | Live tracking | 5.7 s (Live 4.7 s after Start) | ~1.5 min |
+| 5 | AI fraud panel | 78.8 s (script 65.8 s + panel) | ~1.5 min |
+| 6 | Assistant | 7.2 s (warm) | ~1 min |
+| | **Total** | **~105 s of actions** | **~8.5 min + talking** |
+
+The difference between the two columns is the presenter talking and browsing;
+the actions themselves were measured by `node rehearse_demo.js`.
+
+---
+
+## Full rehearsal
+
+`frontend/rehearse_demo.js` plays the corrected order against the running stack:
+it runs `verify_auth_hardening.js` and `verify_proof.js`, books a fresh order by
+driving the real booking UI, starts the courier simulation, watches the client
+map go Live, runs `verify_fraud_panel.js` with `KEEP=1`, checks the admin panel
+tags and the score-curve modal, then asks the assistant a question. It cleans up
+its own orders at the end and prints a per-phase timeline. Latest run: **14/14
+checks, 105.6 s total**.
 
 ---
 
 ## Friction found in rehearsal, and the fix
 
-1. **The security script logs out admin** → any open admin tab is signed out.
-   Run it before opening the admin dashboard, or sign back in.
-2. **The courier simulation auto-completes at the destination** → a seeded
-   `IN_TRANSIT` order is consumed. Book a fresh order per demo instead of
-   relying on the seed.
-3. **The live courier sim cannot produce fraud** (it follows real roads). Fraud
+1. **Security last killed the admin tab.** `verify_auth_hardening.js` signs out
+   admin. It is now segment 2, before any dashboard is opened.
+2. **The fraud script deleted its own evidence.** `verify_fraud_panel.js` cleaned
+   up its rows in `finally`, so opening **Fleet overview** after it showed
+   nothing. It now accepts `KEEP=1` to leave the three probe rows in place.
+3. **`Centre, Casablanca` is in Cameroon.** The free-text geocoder matched the
+   Centre region; the route exceeded the 45-minute limit and checkout never
+   opened. Book by clicking the map, or use full unambiguous addresses.
+4. **A long reverse-geocoded address broke the insert.** Nominatim returns the
+   full hierarchy in French + Arabic + Tifinagh, past the 255-character column,
+   and the server surfaced it as a misleading **409 "a record already exists"**.
+   Fixed: `LocationPicker` keeps the first few components and caps the label at
+   200 characters, and `DeliveryRequest` bounds the address at 255 so any other
+   client gets a clear 400.
+5. **The courier simulation auto-completes at the destination** → a seeded
+   `IN_TRANSIT` order is consumed. Book a fresh order per demo.
+6. **The live courier sim cannot produce fraud** (it follows real roads). Fraud
    is shown with the scripted probe, which takes ~66 s — talk over it, or
-   pre-run it and just present the resulting panel.
-4. **Assistant cold start** is 20–40 s for the first question. Warm it in step 0.
-5. **Cloud free tier** sleeps after ~15 min idle and its Postgres is deleted
+   pre-run it with `KEEP=1` and present the resulting panel.
+7. **Assistant cold start** is 20–40 s for the first question. Warm it in step 0.
+8. **Cloud free tier** sleeps after ~15 min idle and its Postgres is deleted
    after 30 days without backup. Wake it before the demo; recreate/re-apply
    within 30 days.
