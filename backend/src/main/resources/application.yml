@@ -43,6 +43,12 @@ spring:
 
   ai:
     ollama:
+      # Ollama is an external process, not a container. The default is correct
+      # for a local run (mvn spring-boot:run); docker-compose overrides it with
+      # host.docker.internal, because inside a container `localhost` is the
+      # container itself -- which silently disables the assistant even when
+      # Ollama is running and the models are pulled.
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         model: llama3.2:1b
         options:

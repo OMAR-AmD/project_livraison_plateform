@@ -124,6 +124,10 @@ services:
       # read as a mapping -- and the resulting error points at the wrong line.
       JWT_SECRET_KEY: "${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env - generate with openssl rand -hex 32}"
       OSRM_BASE_URL: http://osrm:5000
+      # Ollama runs on the host, not in a container. Without this the backend
+      # calls its own localhost:11434 and disables the assistant even when
+      # Ollama is running and the models are pulled.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       SPRING_PROFILES_ACTIVE: demo
     ports:
       # Published so a phone on the same network can reach the API during a
@@ -131,6 +135,10 @@ services:
       # Next.js origin already proxies /api, so nothing needs the backend
       # exposed once a reverse proxy or platform routes is in front.
       - "8080:8080"
+    # Docker Desktop resolves host.docker.internal by itself; on Linux this
+    # gateway mapping is what makes the host reachable under that name.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS --max-time 4 -o /dev/null http://localhost:8080/api/v1/auth/login || exit 1"]
       interval: 15s
