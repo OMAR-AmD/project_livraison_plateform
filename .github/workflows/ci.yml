@@ -288,11 +288,21 @@ jobs:
             sleep 2
           done
 
-          token=$(docker exec ci-backend curl -sS --max-time 10 \
-            -H 'Content-Type: application/json' \
-            -d '{"email":"admin@swift.com","password":"password123"}' \
-            http://localhost:8080/api/v1/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
-
+          # Tomcat binds and serves before the demo seeder has run, so "the API
+          # answered" is not "the admin exists". The earlier version logged in
+          # once and treated an empty token as a missing schema, which made this
+          # step fail whenever the one attempt landed in that startup window.
+          # Poll the real sign-in until it returns a token instead.
+          token=""
+          for i in $(seq 1 20); do
+            token=$(docker exec ci-backend curl -sS --max-time 10 \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"admin@swift.com","password":"password123"}' \
+              http://localhost:8080/api/v1/auth/login 2>/dev/null \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+            [ -n "$token" ] && break
+            sleep 3
+          done
           if [ -z "$token" ]; then
             echo "the container serves HTTP but cannot sign in -- schema or seed data missing"
             exit 1
