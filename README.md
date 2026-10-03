@@ -143,6 +143,21 @@ warning ever stops appearing, so the regression cannot come back quietly.
 
 ## ⚙️ How to Run Locally
 
+> **One command, whole stack.** `docker-compose.yml` builds and runs all five
+> services (Postgres, Redis, OSRM, backend, frontend). Copy the environment file,
+> put a real signing key in it, and start it:
+>
+> ```bash
+> cp .env.example .env          # then set JWT_SECRET_KEY (openssl rand -hex 32)
+> docker compose up --build
+> ```
+>
+> Then open `http://localhost:3000`. Two things the one-liner does not hide:
+> routing still needs prepared map data (step 1 below; without it the platform
+> runs but dispatch falls back to manual), and the container reaches Ollama on
+> the host through `host.docker.internal`. The numbered steps below are the
+> local-development path (Maven + npm), which needs no map data to boot.
+
 ### Prerequisites
 
 | Requirement | Version | Notes |
