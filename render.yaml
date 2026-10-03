@@ -54,6 +54,14 @@ services:
   - type: keyvalue
     name: swiftdeliver-cache
     plan: free
+    # Same region as the backend, and this is not cosmetic. A Key Value
+    # instance's internal URL is only reachable from services in its own
+    # region, and `region` defaults to oregon. Omitted -- as it was -- the
+    # backend in frankfurt cannot reach the cache at all: login still works,
+    # but every delivery list containing an IN_TRANSIT order 500s on the
+    # live-position read, and the fraud panel holds no trails. Found against
+    # the deployed instance, not in review.
+    region: frankfurt
     # Required for every Key Value instance. 0.0.0.0/0 because the backend
     # reaches it over Render's private network, and the instance has no password
     # -- access control here is the allowlist, so this is worth a sentence in a

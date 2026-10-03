@@ -114,6 +114,21 @@ curl -s -o /dev/null -w 'limited: %{http_code}\n' -X POST \
   https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"nobody@example.com","password":"wrong"}'   # expected: 429
+
+# 6. A demo account whose list contains an IN_TRANSIT order can read it.
+#    This is the check the first deploy lacked, and its absence let a real
+#    defect ship: the backend was in frankfurt and the Key Value in the default
+#    oregon, so the cache was unreachable, and every delivery list containing an
+#    IN_TRANSIT order answered 500. Login never touches the cache, so the
+#    failure looked random. The code now degrades to a blank marker instead of a
+#    500, but this asserts the cache is genuinely reachable -- same region.
+CTOKEN=$(curl -s -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"client1@swift.com","password":"password123"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+curl -s -o /dev/null -w 'client deliveries: %{http_code}\n' \
+  https://swiftdeliver-backend-j47m.onrender.com/api/v1/client/deliveries \
+  -H "Authorization: Bearer $CTOKEN"                      # expected: 200
 ```
 
 Then open the frontend URL, sign in as `admin@swift.com` / `password123`, and
@@ -180,6 +195,22 @@ front of an examiner.
 **Regions.** `frankfurt` is set per-resource, not once at the root, and cannot be
 changed after creation. It is the lowest-latency region for a European audience
 and the OSRM demo server used here is also in Europe.
+
+Region is also a correctness field, and this cost a live outage worth writing
+down. Render's **internal** URLs (a Key Value `host`, a Postgres `host`) are only
+reachable from services in the same region, and an omitted `region` defaults to
+`oregon`. The first deploy set the backend to `frankfurt` but left the Key Value
+without a region, so the backend could not reach its cache. The symptom was not a
+dead deploy: login, which never touches Redis, kept working, and only the delivery
+lists containing an `IN_TRANSIT` order answered 500 -- because that is the one
+status whose response reads the live position. Two fixes: the backend now degrades
+to a blank marker instead of a 500, and `scripts/check_render_blueprint.py`
+refuses a blueprint whose cache or database region differs from the backend's.
+Because region is immutable, applying this corrected blueprint **recreates** the
+Key Value; that is harmless here, since the cache holds only TTL'd positions and
+fraud trails, and the Postgres region was already correct. The corrected
+`render.yaml` only takes effect after a Blueprint re-Apply in the dashboard -- a
+normal auto-deploy rebuilds the services, it does not re-apply resource fields.
 
 ---
 

@@ -157,6 +157,36 @@ def main(argv: list[str]) -> int:
         if missing:
             fail(problems, f"swiftdeliver-backend is missing env vars: {sorted(missing)}")
 
+    # ---------------------------------------------------- private-network regions
+    # Render's internal URLs (a Key Value `host`, a Postgres `host`) are only
+    # reachable from a service in the same region. A resource that omits
+    # `region` defaults to oregon, so a backend in frankfurt silently loses its
+    # cache and its database: the deploy still succeeds, login still works, and
+    # only the paths that touch the cache fail at runtime. That is how the live
+    # deployment 500'd on every delivery list containing an IN_TRANSIT order.
+    # The JSON Schema validates each resource in isolation and cannot see this.
+    region_checked = 0
+    if backend is not None:
+        backend_region = backend.get("region") or "oregon"
+        for svc in services:
+            if isinstance(svc, dict) and svc.get("type") in ("keyvalue", "redis"):
+                region_checked += 1
+                region = svc.get("region") or "oregon"
+                if region != backend_region:
+                    fail(problems, f"service {svc.get('name', '<unnamed>')}: region "
+                                   f"{region!r} differs from swiftdeliver-backend "
+                                   f"region {backend_region!r}; internal URLs are "
+                                   f"not reachable across regions")
+        for db in databases:
+            if isinstance(db, dict):
+                region_checked += 1
+                region = db.get("region") or "oregon"
+                if region != backend_region:
+                    fail(problems, f"database {db.get('name', '<unnamed>')}: region "
+                                   f"{region!r} differs from swiftdeliver-backend "
+                                   f"region {backend_region!r}; internal URLs are "
+                                   f"not reachable across regions")
+
     # -------------------------------------------------------- anti-vacuity
     # A referential check that finds no references has checked nothing. These
     # assertions exist so this script cannot report success while silently
@@ -172,6 +202,9 @@ def main(argv: list[str]) -> int:
         fail(problems, "no databases declared")
     if len(services) < 3:
         fail(problems, f"expected at least 3 services (cache, backend, frontend), found {len(services)}")
+    if region_checked < 2:
+        fail(problems, f"private-network region check inspected only {region_checked} "
+                       f"resource(s); expected the keyvalue cache and the database")
 
     # ------------------------------------------------------------ report
     if problems:

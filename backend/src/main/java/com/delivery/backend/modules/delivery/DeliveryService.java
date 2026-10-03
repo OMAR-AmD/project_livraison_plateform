@@ -150,7 +150,21 @@ public class DeliveryService {
     }
 
     public com.delivery.backend.modules.delivery.dto.LocationUpdateRequest getCourierLocation(UUID deliveryId) {
-        String json = redisTemplate.opsForValue().get("livreur:position:" + deliveryId);
+        String json;
+        try {
+            json = redisTemplate.opsForValue().get("livreur:position:" + deliveryId);
+        } catch (Exception e) {
+            // Redis holds the live marker, never the order itself. A read failure
+            // must not take down a list that is otherwise perfectly readable:
+            // otherwise a single IN_TRANSIT delivery turns every listing that
+            // contains it into a 500. This is the same contract as the write
+            // path above -- losing a coordinate is cheaper than losing the order
+            // -- and it is what keeps the platform usable when the cache is
+            // unreachable (e.g. a Render Key Value provisioned in another region
+            // than the backend).
+            log.warn("could not read courier position for delivery {}: {}", deliveryId, e.toString());
+            return null;
+        }
         if (json != null) {
             try {
                 return objectMapper.readValue(json, com.delivery.backend.modules.delivery.dto.LocationUpdateRequest.class);
