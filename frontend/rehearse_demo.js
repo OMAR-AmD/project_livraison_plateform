@@ -272,6 +272,23 @@ async function main() {
       await cRow.waitFor({ state: 'visible', timeout: 30000 });
       const tStart = now();
       await cRow.getByRole('button', { name: 'Start delivery' }).click();
+
+      // The laptop must keep the deterministic simulated route. If the device
+      // default ever flips, the courier would silently open a real GPS watch
+      // (a location prompt) during the automated run.
+      let courierMode = 'not shown';
+      try {
+        await courierPage.getByText('Simulating GPS').waitFor({ state: 'visible', timeout: 15000 });
+        courierMode = 'Simulating GPS';
+      } catch {
+        courierMode = await courierPage
+          .locator('header span', { hasText: /Simulating GPS|live location/ })
+          .first()
+          .innerText()
+          .catch(() => 'not shown');
+      }
+      check('courier defaults to the simulated route on the laptop', courierMode === 'Simulating GPS', courierMode);
+
       await clientPage.waitForFunction(() => {
         const el = document.querySelector('[data-testid="client-live-map-status"]');
         return el && /Live/.test(el.textContent);

@@ -8,12 +8,16 @@ import { StatusPill, PaymentTag } from '@/components/StatusPill';
 import CourierStats from '@/components/CourierStats';
 import StopAction from '@/components/StopAction';
 import EmptyState, { EmptyIcons } from '@/components/EmptyState';
+import { defaultToSimulation, detectGpsEnvironment } from '@/lib/gpsMode';
 
 export default function CourierView() {
   const [deliveries, setDeliveries] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSimulating, setIsSimulating] = useState(false);
+  // Once the courier picks a mode themselves we stop auto-selecting for them.
+  const gpsModeChosenRef = useRef(false);
+  const gpsErrorNotifiedRef = useRef(false);
   const { addToast } = useToast();
   const watchIdRef = useRef(null);
   const simIntervalRef = useRef(null);
@@ -27,14 +31,13 @@ export default function CourierView() {
     fetchStats();
   }, []);
 
-  // Auto-start simulation if there is a delivery in transit
+  // Pick a sensible mode whenever a round starts: a phone on HTTPS shares its
+  // real position, while the laptop (and the automated rehearsal) gets the
+  // simulated route. A manual choice always wins over this default.
   useEffect(() => {
+    if (gpsModeChosenRef.current) return;
     const hasInTransit = deliveries.some(d => d.status === 'IN_TRANSIT');
-    if (hasInTransit && !isSimulating) {
-      setIsSimulating(true);
-    } else if (!hasInTransit && isSimulating) {
-      setIsSimulating(false);
-    }
+    setIsSimulating(hasInTransit ? defaultToSimulation(detectGpsEnvironment()) : false);
   }, [deliveries]);
 
   // Fetch optimal path when simulation starts
@@ -56,7 +59,6 @@ export default function CourierView() {
           const optData = await courierOptimizeRoute(startLat, startLng);
           if (!optData || !optData.orderedWaypoints || optData.orderedWaypoints.length === 0) {
             addToast('No deliveries to simulate', 'warning');
-            setIsSimulating(false);
             return;
           }
           
@@ -74,7 +76,6 @@ export default function CourierView() {
           }
         } catch (err) {
           console.error("Simulation path error:", err);
-          setIsSimulating(false);
         }
       };
       generatePath();
@@ -112,7 +113,6 @@ export default function CourierView() {
               if (simIndexRef.current >= simPath.length) {
                 clearInterval(simIntervalRef.current);
                 simIntervalRef.current = null;
-                setIsSimulating(false);
                 addToast('Simulation reached destination!', 'success');
                 
                 // Auto-complete deliveries
@@ -160,7 +160,13 @@ export default function CourierView() {
                   .catch(err => console.warn('Location broadcast failed:', err));
               });
             },
-            (err) => console.error('GPS error', err),
+            (err) => {
+              console.error('GPS error', err);
+              if (!gpsErrorNotifiedRef.current) {
+                gpsErrorNotifiedRef.current = true;
+                addToast('Real GPS unavailable — allow location, or use the simulator.', 'warning');
+              }
+            },
             { enableHighAccuracy: true, maximumAge: 5000 }
           );
         }
@@ -208,6 +214,20 @@ export default function CourierView() {
     }
   };
 
+  /**
+   * The courier can override the auto-selected mode. Choosing real GPS on a
+   * non-HTTPS origin cannot work (browsers require a secure context for
+   * geolocation), so we warn before handing the browser a broken promise.
+   */
+  const toggleGpsMode = () => {
+    const goingReal = isSimulating;
+    gpsModeChosenRef.current = true;
+    if (goingReal && !detectGpsEnvironment().secureContext) {
+      addToast('Real GPS needs HTTPS. Open the deployed site, or keep the simulator.', 'warning');
+    }
+    setIsSimulating((prev) => !prev);
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -228,6 +248,19 @@ export default function CourierView() {
               </span>
               {isSimulating ? 'Simulating GPS' : 'Sharing live location'}
             </span>
+          )}
+          {deliveries.some((d) => d.status === 'IN_TRANSIT') && (
+            <button
+              onClick={toggleGpsMode}
+              className="btn-secondary shrink-0"
+              title={
+                isSimulating
+                  ? 'Broadcast your real phone position instead of a simulated route'
+                  : 'Play a simulated route instead of your real position'
+              }
+            >
+              {isSimulating ? 'Use my real GPS' : 'Simulate route'}
+            </button>
           )}
           <button onClick={() => setIsRouteModalOpen(true)} className="btn-secondary shrink-0">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

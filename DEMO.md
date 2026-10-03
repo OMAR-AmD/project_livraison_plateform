@@ -111,6 +111,25 @@ Note: the simulation reaches the destination and auto-marks the order
 rush hour (07–09, 17–19). For repeated demos, book a **fresh** order each time so
 client1 always has an active one.
 
+### Optional: the courier's real phone GPS
+
+The mode is picked automatically: the laptop and the rehearsal stay on the
+simulator, so their behaviour is deterministic. To show a **real** trajectory:
+
+1. Open the **deployed site (HTTPS)** on the phone, sign in as **courier1**, start
+   the delivery.
+2. The badge reads **Sharing live location** (not *Simulating GPS*), and the
+   client section follows the phone as you move.
+3. Switch either way at any time with the header button **Use my real GPS** /
+   **Simulate route**.
+
+Geolocation is only allowed in a **secure context**, so this works on the
+deployed site (`https://…onrender.com`) or `localhost`, but **not** on the LAN URL
+`http://192.168.137.1:3000` — there the button warns and stays on the simulator.
+On the cloud the client's map also needs the cache in the backend's region
+(Render Blueprint re-apply); the courier's own screen follows the phone
+regardless. Verify end-to-end with `node verify_real_gps.js`.
+
 ---
 
 ## 5. AI fraud detection (~1.5 min) — the graded innovation
