@@ -39,8 +39,8 @@ CI/CD &
 La t\^ache \emph{images} \'echoue si le mod\`ele dispara\^it de l'image~: c'est elle, et non la compilation, qui prouve que la plateforme est livrable. \\
 \hline
 Cloud public &
-\texttt{render.yaml}~: blueprint Render en offre gratuite (PostgreSQL 15, Key Value, deux services web Docker, r\'egion Francfort). \texttt{DEPLOY.md} d\'ecrit la proc\'edure et les limites de l'offre. &
-\texttt{python scripts/check\_render\_blueprint.py render.yaml} v\'erifie en CI la coh\'erence interne (chaque variable pointe vers un service d\'eclar\'e). Sch\'ema complet~: \texttt{python scripts/validate\_render\_blueprint.py render.yaml}. \\
+\texttt{render.yaml}~: blueprint Render en offre gratuite (PostgreSQL 15, Key Value, deux services web Docker, r\'egion Francfort), \emph{appliqu\'e}. \texttt{DEPLOY.md} d\'ecrit la proc\'edure et les limites de l'offre. &
+\texttt{python scripts/check\_render\_blueprint.py render.yaml} v\'erifie en CI la coh\'erence interne (chaque variable pointe vers un service d\'eclar\'e). En ligne~: \texttt{https://swiftdeliver-frontend.onrender.com} sert la plateforme, sa sant\'e renvoie \texttt{fraudModel:loaded, fraudTrees:60}, et le durcissement y est rev\'erifi\'e (d\'econnexion$\rightarrow$200, jeton r\'evoqu\'e$\rightarrow$403, 6\textsuperscript{e} \'echec$\rightarrow$429). Sch\'ema complet~: \texttt{python scripts/validate\_render\_blueprint.py render.yaml}. \\
 \hline
 S\'ecurit\'e standard &
 JWT HS256 dont la cl\'e \emph{n'a aucune valeur par d\'efaut} (l'application refuse de d\'emarrer sans elle)~; RBAC par pr\'efixe de route (\texttt{SecurityConfig})~; secrets uniquement en variables d'environnement (\texttt{.env} ignor\'e, \texttt{.env.example} fourni)~; mots de passe hach\'es en BCrypt~; validation Bean des entr\'ees~; r\'eponses construites en DTO, jamais l'entit\'e \texttt{User}~; d\'econnexion qui r\'evoque c\^ot\'e serveur (\texttt{tokenVersion} incr\'ement\'e, claim \texttt{tv} v\'erifi\'e \`a chaque requ\^ete)~; limitation de d\'ebit des connexions \'echou\'ees (5 par compte, 50 par adresse). &
@@ -54,7 +54,7 @@ Robustesse &
 
 \medskip
 \noindent
-\textbf{Statut du d\'eploiement public.} Le blueprint est \'ecrit et valid\'e, mais il n'est pas encore appliqu\'e sur un compte~: c'est une action c\^ot\'e \'etudiant (Render $\rightarrow$ New $\rightarrow$ Blueprint $\rightarrow$ d\'esigner le d\'ep\^ot). Tant qu'elle n'est pas faite, aucune URL publique n'existe. Ce document ne pr\'etend donc pas \`a une plateforme en ligne~: il pr\'etend que la plateforme d\'emarre \`a l'identique, sans modification, sur une offre gratuite.
+\textbf{Statut du d\'eploiement public.} Le blueprint est appliqu\'e sur Render~: \texttt{https://swiftdeliver-frontend.onrender.com} sert la plateforme, et la sant\'e publique confirme le mod\`ele charg\'e dans le processus distant (\texttt{fraudModel:loaded, fraudTrees:60}). Le durcissement d'authentification y a \'et\'e rev\'erifi\'e~: d\'econnexion$\rightarrow$200, ancien jeton$\rightarrow$403, 6\textsuperscript{e} \'echec$\rightarrow$429. Limites de l'offre gratuite (base supprim\'ee apr\`es 30~jours, mise en veille) document\'ees dans \texttt{DEPLOY.md}.
 
 \section{Innovation~: d\'etection de fraude par IA, coupl\'ee \`a la cybers\'ecurit\'e}
 
