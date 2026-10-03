@@ -27,13 +27,14 @@
 #   rate-limited; that is an acceptable trade for a demo and would not be for
 #   production.
 #
-# THE ONE FIELD YOU MAY HAVE TO FIX AFTERWARDS
-#   BACKEND_URL below is a guess at a hostname, because the frontend's Next.js
-#   rewrites are inlined at BUILD time (next.config.mjs) while the backend's URL
-#   is not known until the backend exists. Render names the public subdomain after
-#   the service, so `swiftdeliver-backend` does give `swiftdeliver-backend.on
-#   .render.com` -- but if that name is taken, Render picks a different one and
-#   this value is wrong.
+# THE ONE FIELD THAT MAY NEED FIXING AFTER A FRESH APPLY
+#   BACKEND_URL below is the real host for the current deployment. Render names
+#   the public subdomain after the service, but `swiftdeliver-backend` was already
+#   taken, so the backend was assigned the suffix `-j47m`. A future blueprint
+#   apply will very likely get a different suffix, and this value would be wrong
+#   again: the frontend's Next.js rewrites are inlined at BUILD time
+#   (next.config.mjs) while the backend's URL is not known until the backend
+#   exists.
 #   Symptom if it is wrong: the site loads, login renders, every API call 502s.
 #   Fix: Dashboard > swiftdeliver-frontend > Environment > set BACKEND_URL to the
 #   backend's real URL > Save & Deploy. No rebuild of anything else is needed,
@@ -158,7 +159,7 @@ services:
       # variables into build arguments for Docker services automatically. See the
       # "one field you may have to fix" note at the top of this file.
       - key: BACKEND_URL
-        value: https://swiftdeliver-backend.onrender.com
+        value: https://swiftdeliver-backend-j47m.onrender.com
       - key: OSRM_URL
         value: https://router.project-osrm.org
 

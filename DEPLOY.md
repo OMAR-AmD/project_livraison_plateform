@@ -64,7 +64,7 @@ already taken, Render appends a suffix and the dashboard shows the real one.
 # 1. The backend is alive AND the AI component is inside the running process.
 #    This is the single most important line in this document: it proves the
 #    container reachable from the internet loaded the fraud model.
-curl -s https://swiftdeliver-backend.onrender.com/api/v1/health
+curl -s https://swiftdeliver-backend-j47m.onrender.com/api/v1/health
 # expected: {"status":"UP","fraudModel":"loaded","fraudTrees":60}
 
 # 2. The frontend serves, and its proxy reaches the backend.
@@ -78,7 +78,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://swiftdeliver-frontend.onrender.
 # 3. The demo accounts exist in the cloud database.
 #    A token here means Postgres accepted the connection, Hibernate created the
 #    schema, and the demo seeder ran -- not merely that a web server is up.
-curl -s -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+curl -s -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@swift.com","password":"password123"}'
 # expected: a JSON object containing a non-empty "token"
@@ -88,30 +88,30 @@ curl -s -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
 #    the deployed image predates the source -- which is exactly what a stale
 #    build looks like from the outside.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
-  https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+  https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' -d '{"email": '
 # expected: 400
 
 # 5. Signing out revokes the token, and a failed-login burst is cut off.
 #    Both controls are server-side, so neither is visible by clicking around.
 #    Note: signing out ends every admin session, including this one.
-TOKEN=$(curl -s -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+TOKEN=$(curl -s -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@swift.com","password":"password123"}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 curl -s -o /dev/null -w 'logout:  %{http_code}\n' -X POST \
-  https://swiftdeliver-backend.onrender.com/api/v1/auth/logout \
+  https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/logout \
   -H "Authorization: Bearer $TOKEN"                       # expected: 200
 curl -s -o /dev/null -w 'revoked: %{http_code}\n' \
-  https://swiftdeliver-backend.onrender.com/api/v1/users/me \
+  https://swiftdeliver-backend-j47m.onrender.com/api/v1/users/me \
   -H "Authorization: Bearer $TOKEN"                       # expected: 401 or 403
 for i in 1 2 3 4 5; do
-  curl -s -o /dev/null -X POST https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+  curl -s -o /dev/null -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
     -H 'Content-Type: application/json' \
     -d '{"email":"nobody@example.com","password":"wrong"}' || true
 done
 curl -s -o /dev/null -w 'limited: %{http_code}\n' -X POST \
-  https://swiftdeliver-backend.onrender.com/api/v1/auth/login \
+  https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"nobody@example.com","password":"wrong"}'   # expected: 429
 ```
@@ -128,13 +128,14 @@ front of an examiner. Loading both URLs once is enough.
 ## 3. The one field that may need fixing
 
 `BACKEND_URL` in `render.yaml` is set to
-`https://swiftdeliver-backend.onrender.com`.
+`https://swiftdeliver-backend-j47m.onrender.com`.
 
 It has to be a literal because Next.js inlines its rewrites at **build** time
 (`next.config.mjs`), while the backend's public URL does not exist until the
-backend has been created. Render names the subdomain after the service, so the
-value above is what the blueprint normally produces — but if that name was taken,
-Render picks a different one.
+backend has been created. `swiftdeliver-backend` was already taken, so Render
+assigned the suffix `-j47m`, and that real host is what the frontend's build
+arg must carry. A future blueprint apply will very likely get a different
+suffix, so expect to update this line then.
 
 **Symptom if it is wrong:** the site loads, the login page renders, and every API
 call fails with 502. The frontend itself looks fine, which is what makes it worth
