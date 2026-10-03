@@ -9,9 +9,10 @@
  * geocoded label (not the raw coordinates), and that the pin lands on the map.
  *
  * WHY IT IS NOT A TRIVIAL CHECK
- * The three assertions are different failures: an empty box means the wiring
- * regressed, a coordinate-shaped value means reverse geocoding was skipped,
- * and a missing pin means the coordinates never reached the form. Nominatim is
+ * The four assertions are different failures: an empty box means the wiring
+ * regressed, a coordinate-shaped value means reverse geocoding was skipped, a
+ * missing pin means the coordinates never reached the form, and a missing
+ * reference pin means the pickup is not shown on the dropoff map. Nominatim is
  * stubbed with a fixed display_name so the result is exact and does not depend
  * on an external service being reachable; the real Nominatim path is already
  * exercised by clicking the map.
@@ -20,6 +21,8 @@
  * Make the external-coordinate effect in src/components/LocationPicker.js
  * return immediately (add `return;` after the null guard). The pickup box
  * stays empty and "the GPS position fills the pickup text" fails.
+ * Drop referenceLat/referenceLng from the dropoff LocationPicker in
+ * ClientView.js: the "dropoff map shows the pickup" check fails.
  *
  * RUN  (the backend must be up; WEB points at a frontend built from this tree)
  * node verify_gps_pickup.js
@@ -101,6 +104,9 @@ async function main() {
     await pickup.waitFor({ state: 'visible', timeout: 30000 });
     check('the pickup field starts empty', (await pickup.inputValue()) === '');
 
+    const refBefore = await page.locator('.reference-pin-icon').count();
+    check('the dropoff map has no pickup reference yet', refBefore === 0, `${refBefore} reference pin(s)`);
+
     await gpsButton.click();
 
     // Reverse geocoding is a network round trip; give it room but stop early.
@@ -125,6 +131,16 @@ async function main() {
       await page.waitForTimeout(200);
     }
     check('the GPS position is placed on the map', pins >= 1, `${pins} pin(s)`);
+
+    // The dropoff map must show the pickup as a reference pin.
+    let references = 0;
+    const refDeadline = Date.now() + 5000;
+    while (Date.now() < refDeadline) {
+      references = await page.locator('.reference-pin-icon').count();
+      if (references >= 1) break;
+      await page.waitForTimeout(200);
+    }
+    check('the dropoff map shows the pickup for reference', references >= 1, `${references} reference pin(s)`);
 
     await ctx.close();
   } catch (e) {

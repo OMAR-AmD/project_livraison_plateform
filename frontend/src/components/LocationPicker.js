@@ -31,7 +31,7 @@ async function reverseGeocode(lat, lng) {
   return data && data.display_name ? formatAddress(data.display_name) : null;
 }
 
-export default function LocationPicker({ label, placeholder, address, lat, lng, onLocationChange }) {
+export default function LocationPicker({ label, placeholder, address, lat, lng, onLocationChange, referenceLat, referenceLng, referenceLabel }) {
   const [query, setQuery] = useState(address || '');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -180,8 +180,22 @@ export default function LocationPicker({ label, placeholder, address, lat, lng, 
       )}
 
       <div className="overflow-hidden rounded-lg border border-line">
-        <LocationPickerMap lat={lat} lng={lng} onChange={handleMapChange} />
+        <LocationPickerMap
+          lat={lat}
+          lng={lng}
+          referenceLat={referenceLat}
+          referenceLng={referenceLng}
+          referenceLabel={referenceLabel}
+          onChange={handleMapChange}
+        />
       </div>
+
+      {referenceLat != null && referenceLng != null && (
+        <p className="flex items-center gap-1.5 text-xs text-content-faint">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#3b82f6]" />
+          {referenceLabel || 'Reference'} location, shown for context
+        </p>
+      )}
 
       <p className="text-xs text-content-faint">
         Type an address or click the map. The quoted price is calculated by the server from the

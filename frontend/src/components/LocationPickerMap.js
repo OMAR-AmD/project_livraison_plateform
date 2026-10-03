@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { MapContainer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, Tooltip, useMapEvents } from 'react-leaflet';
 import BasemapLayer from './BasemapLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -24,6 +24,19 @@ const customIcon = L.divIcon({
   popupAnchor: [0, -36]
 });
 
+// A second, deliberately different pin used to show a reference point (the
+// pickup, on the dropoff map). Its own class keeps it out of any code that
+// counts the active pin.
+const referenceIcon = L.divIcon({
+  className: 'reference-pin-icon',
+  html: `<svg width="24" height="36" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 0C5.372 0 0 5.373 0 12c0 8.442 11.234 23.385 11.606 23.864a.5.5 0 00.788 0C12.766 35.385 24 20.442 24 12c0-6.627-5.372-12-12-12zm0 17.5a5.5 5.5 0 110-11 5.5 5.5 0 010 11z" fill="#3b82f6"/>
+  </svg>`,
+  iconSize: [24, 36],
+  iconAnchor: [12, 36],
+  popupAnchor: [0, -36]
+});
+
 function MapEvents({ onMapClick }) {
   useMapEvents({
     click(e) {
@@ -33,15 +46,31 @@ function MapEvents({ onMapClick }) {
   return null;
 }
 
-export default function LocationPickerMap({ lat, lng, onChange }) {
+export default function LocationPickerMap({ lat, lng, onChange, referenceLat, referenceLng, referenceLabel }) {
   const [map, setMap] = useState(null);
 
-  // If external lat/lng changes drastically, pan the map
+  // Keep the interesting points in view: the active pin if there is one,
+  // otherwise the reference (e.g. the pickup on the dropoff map), and both when
+  // the client has picked two points.
   useEffect(() => {
-    if (map && lat && lng) {
+    if (!map) return;
+    const hasOwn = lat != null && lng != null;
+    const hasReference = referenceLat != null && referenceLng != null;
+
+    if (hasOwn && hasReference) {
+      map.fitBounds(
+        L.latLngBounds([
+          [lat, lng],
+          [referenceLat, referenceLng],
+        ]),
+        { padding: [40, 40], maxZoom: 16 },
+      );
+    } else if (hasOwn) {
       map.flyTo([lat, lng], map.getZoom() > 14 ? map.getZoom() : 15);
+    } else if (hasReference) {
+      map.flyTo([referenceLat, referenceLng], 14);
     }
-  }, [lat, lng, map]);
+  }, [lat, lng, referenceLat, referenceLng, map]);
 
   return (
     <div className="h-48 w-full rounded-lg overflow-hidden border border-line z-0">
@@ -67,6 +96,15 @@ export default function LocationPickerMap({ lat, lng, onChange }) {
               },
             }}
           />
+        )}
+        {/* The reference point is drawn but not clickable: it must never
+            become the active point just because the client hovered it. */}
+        {referenceLat != null && referenceLng != null && (
+          <Marker position={[referenceLat, referenceLng]} icon={referenceIcon} interactive={false}>
+            <Tooltip permanent direction="top" offset={[0, -30]}>
+              {referenceLabel || 'Reference'}
+            </Tooltip>
+          </Marker>
         )}
       </MapContainer>
     </div>

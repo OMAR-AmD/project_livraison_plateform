@@ -78,7 +78,9 @@ locked.
 2. Description e.g. `Demo parcel`; set pickup and drop-off by **clicking the
    map**. Click the map, wait for the address box to fill, repeat for the second
    point. On a phone you can press **📍 Use my GPS location** instead: it drops
-   the pin and fills the box with the reverse-geocoded address.
+   the pin and fills the box with the reverse-geocoded address. Once the pickup
+   is set it stays visible on the **drop-off** map as a blue **Pickup** pin, so
+   you can place the second point relative to it (the map frames both pins).
 3. **Continue to payment** — the price comes from the server (measured 0.3–0.4 s;
    ~29–32 MAD for two Casablanca points).
 4. Confirm payment. Measured **4.6 s** to create + capture; the order flips to

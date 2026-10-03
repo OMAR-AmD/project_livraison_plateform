@@ -427,6 +427,9 @@ export default function ClientView() {
               address={formData.dropoffAddress}
               lat={formData.dropoffLat}
               lng={formData.dropoffLng}
+              referenceLat={formData.pickupLat}
+              referenceLng={formData.pickupLng}
+              referenceLabel="Pickup"
               onLocationChange={(loc) => {
                 setFormData(prev => ({
                   ...prev,
