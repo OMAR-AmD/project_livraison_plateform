@@ -224,6 +224,12 @@ build/
 # Database snapshots (local testing)
 *.sql
 *.sql.gz
+# ...except the bootstrap script docker-compose mounts into
+# /docker-entrypoint-initdb.d. It is required, not a snapshot: it creates the
+# pgvector extension, without which a fresh clone builds an empty vector store
+# and silently disables the FAQ assistant. Do not remove this negation unless
+# init.sql is deleted from docker-compose.yml as well.
+!init.sql
 
 # Report files
 reports/
