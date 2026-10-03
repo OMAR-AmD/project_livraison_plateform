@@ -47,7 +47,7 @@ public class ChatService {
     static final String UNAVAILABLE_MESSAGE =
             "The assistant is currently unavailable because the local language model is not "
                     + "responding. Everything else in the platform still works — start Ollama and "
-                    + "pull the llama3.2:1b and nomic-embed-text models to enable chat.";
+                    + "pull the llama3.1:8b and nomic-embed-text models to enable chat.";
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
@@ -166,7 +166,7 @@ public class ChatService {
                      Cause: {}: {}
                      To enable it, start Ollama and pull the required models:
                        ollama serve
-                       ollama pull llama3.2:1b
+                       ollama pull llama3.1:8b
                        ollama pull nomic-embed-text
                     ================================================================
                     """,

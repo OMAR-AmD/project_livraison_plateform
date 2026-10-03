@@ -50,7 +50,11 @@ spring:
       # Ollama is running and the models are pulled.
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
-        model: llama3.2:1b
+        # The first choice was a 1B model, small enough to ignore the FAQ and
+        # fire the cancellation tool on unrelated questions. 8B follows the
+        # instructions and fits an 8 GB GPU. On a lighter machine, override with
+        # SPRING_AI_OLLAMA_CHAT_MODEL=llama3.2:1b (or :3b) and pull that one.
+        model: llama3.1:8b
         options:
           temperature: 0.2
       embedding:

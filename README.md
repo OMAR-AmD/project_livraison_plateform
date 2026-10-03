@@ -183,14 +183,17 @@ To enable the assistant:
 
 ```bash
 ollama serve                      # in its own terminal
-ollama pull llama3.2:1b           # chat model
+ollama pull llama3.1:8b           # chat model (~5 GB, fits an 8 GB GPU)
 ollama pull nomic-embed-text      # embedding model for pgvector
 ```
 
 The two model names are configured in `backend/src/main/resources/application.yml`
 and can be overridden with `SPRING_AI_OLLAMA_CHAT_MODEL` and
-`SPRING_AI_OLLAMA_EMBEDDING_MODEL`. The FAQ corpus is rebuilt into the vector
-store on every startup, so editing `faq.txt` takes effect on the next boot.
+`SPRING_AI_OLLAMA_EMBEDDING_MODEL`. The default chat model is `llama3.1:8b`, which
+wants roughly 5 GB of VRAM or RAM; on a lighter machine set
+`SPRING_AI_OLLAMA_CHAT_MODEL=llama3.2:1b` (or `:3b`) and pull that one instead.
+The FAQ corpus is rebuilt into the vector store on every startup, so editing
+`faq.txt` takes effect on the next boot.
 
 ### Seed demo data (optional)
 
