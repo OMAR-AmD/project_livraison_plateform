@@ -17,12 +17,29 @@ function formatAddress(raw) {
   return joined.length > MAX_ADDRESS_CHARS ? joined.slice(0, MAX_ADDRESS_CHARS) : joined;
 }
 
+/** Stable key for a coordinate pair, so the same position is geocoded once. */
+function coordKey(lat, lng) {
+  return `${lat},${lng}`;
+}
+
+/** Turns coordinates into the short human label used across the app. */
+async function reverseGeocode(lat, lng) {
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+  );
+  const data = await res.json();
+  return data && data.display_name ? formatAddress(data.display_name) : null;
+}
+
 export default function LocationPicker({ label, placeholder, address, lat, lng, onLocationChange }) {
   const [query, setQuery] = useState(address || '');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const timeoutRef = useRef(null);
+  // Coordinates already turned into an address, so a map click is not
+  // reverse-geocoded a second time when its props flow back in.
+  const lastGeocodedRef = useRef(null);
 
   // Sync external address changes
   useEffect(() => {
@@ -30,6 +47,36 @@ export default function LocationPicker({ label, placeholder, address, lat, lng, 
       setQuery(address || '');
     }
   }, [address]);
+
+  // The "Use my GPS location" button sets the coordinates on the parent
+  // directly, without going through the map handlers below, so the pin moved
+  // but the text box stayed empty. Resolve a label for any coordinate that
+  // arrives from the outside, not just for map clicks.
+  useEffect(() => {
+    if (lat == null || lng == null) return;
+    const key = coordKey(lat, lng);
+    if (lastGeocodedRef.current === key) return;
+    lastGeocodedRef.current = key;
+
+    (async () => {
+      let label = null;
+      try {
+        label = await reverseGeocode(lat, lng);
+      } catch (err) {
+        console.error("Reverse geocoding error:", err);
+      }
+      // A newer position may have arrived while we were fetching: drop this one.
+      if (lastGeocodedRef.current !== key) return;
+      // Fall back to the raw coordinates so the field is never left empty.
+      const resolved = label || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      setQuery(resolved);
+      setShowSuggestions(false);
+      onLocationChange({ address: resolved, lat, lng });
+    })();
+    // onLocationChange is a fresh closure each render; the key guard above is
+    // what stops repeated geocoding, not the dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lat, lng]);
 
   // Debounced Nominatim Search
   useEffect(() => {
@@ -60,20 +107,21 @@ export default function LocationPicker({ label, placeholder, address, lat, lng, 
     const newLat = parseFloat(suggestion.lat);
     const newLng = parseFloat(suggestion.lon);
     const newAddress = formatAddress(suggestion.display_name);
-    
+
+    lastGeocodedRef.current = coordKey(newLat, newLng);
     setQuery(newAddress);
     setShowSuggestions(false);
     onLocationChange({ address: newAddress, lat: newLat, lng: newLng });
   };
 
   const handleMapChange = async (newLat, newLng) => {
+    // Claim this pair first so the effect above does not geocode it again.
+    lastGeocodedRef.current = coordKey(newLat, newLng);
     onLocationChange({ address: query, lat: newLat, lng: newLng });
     // Reverse geocode
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newLat}&lon=${newLng}`);
-      const data = await res.json();
-      if (data && data.display_name) {
-        const formatted = formatAddress(data.display_name);
+      const formatted = await reverseGeocode(newLat, newLng);
+      if (formatted) {
         setQuery(formatted);
         setShowSuggestions(false);
         onLocationChange({ address: formatted, lat: newLat, lng: newLng });

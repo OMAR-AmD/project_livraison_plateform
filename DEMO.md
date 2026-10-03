@@ -77,7 +77,8 @@ locked.
 1. **My deliveries** → **New delivery**.
 2. Description e.g. `Demo parcel`; set pickup and drop-off by **clicking the
    map**. Click the map, wait for the address box to fill, repeat for the second
-   point.
+   point. On a phone you can press **📍 Use my GPS location** instead: it drops
+   the pin and fills the box with the reverse-geocoded address.
 3. **Continue to payment** — the price comes from the server (measured 0.3–0.4 s;
    ~29–32 MAD for two Casablanca points).
 4. Confirm payment. Measured **4.6 s** to create + capture; the order flips to
@@ -119,9 +120,13 @@ simulator, so their behaviour is deterministic. To show a **real** trajectory:
 1. Open the **deployed site (HTTPS)** on the phone, sign in as **courier1**, start
    the delivery.
 2. The badge reads **Sharing live location** (not *Simulating GPS*), and the
-   client section follows the phone as you move.
+   client section follows the phone as you move. Zoom to street level (up to
+   zoom 19) to see the marker track small movements.
 3. Switch either way at any time with the header button **Use my real GPS** /
    **Simulate route**.
+4. While sharing, the page holds a **screen wake lock** so the phone does not
+   sleep: a sleeping phone suspends geolocation, which used to make the client
+   read **Signal lost** mid-delivery. Locking the screen by hand still does.
 
 Geolocation is only allowed in a **secure context**, so this works on the
 deployed site (`https://…onrender.com`) or `localhost`, but **not** on the LAN URL

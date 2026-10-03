@@ -25,6 +25,10 @@ export default function CourierView() {
   const simIndexRef = useRef(0);
   const [currentCoords, setCurrentCoords] = useState({ lat: 33.5731, lng: -7.5898 });
   const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
+  // Held while we broadcast real GPS so the phone screen does not sleep and
+  // silence the position stream.
+  const wakeLockRef = useRef(null);
+  const hasInTransit = deliveries.some((d) => d.status === 'IN_TRANSIT');
 
   useEffect(() => {
     fetchDeliveries();
@@ -178,6 +182,59 @@ export default function CourierView() {
     return cleanup;
   }, [deliveries, isSimulating, simPath]);
 
+  // A phone suspends geolocation (and timers) when its screen turns off or the
+  // tab is hidden, which is what made the client fall to "Signal lost" in the
+  // middle of a delivery. Hold a screen wake lock while real GPS is being
+  // broadcast so the phone stays awake, and release it when we stop or switch
+  // back to the simulator. The lock is best-effort: a browser without the API
+  // simply keeps its previous behaviour.
+  useEffect(() => {
+    const broadcasting = !isSimulating && hasInTransit;
+
+    if (!broadcasting || typeof navigator === 'undefined' || !('wakeLock' in navigator)) {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+      return;
+    }
+
+    let active = true;
+    const acquire = async () => {
+      if (!active || wakeLockRef.current) return;
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        if (!active) {
+          lock.release().catch(() => {});
+          return;
+        }
+        wakeLockRef.current = lock;
+        // The browser drops the lock when the page is hidden; clearing our
+        // reference lets the visibility handler request a fresh one.
+        lock.addEventListener('release', () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        });
+      } catch (err) {
+        console.warn('Screen wake lock unavailable:', err);
+      }
+    };
+
+    acquire();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') acquire();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    };
+  }, [isSimulating, hasInTransit]);
+
   const fetchDeliveries = async () => {
     try {
       const data = await courierGetDeliveries();
@@ -238,6 +295,11 @@ export default function CourierView() {
               ? 'Nothing assigned to you.'
               : `${deliveries.length} stop${deliveries.length === 1 ? '' : 's'} on your round`}
           </p>
+          {hasInTransit && !isSimulating && (
+            <p className="mt-1 text-xs text-content-faint">
+              Broadcasting your real GPS — the screen is kept awake so the position keeps flowing.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {deliveries.some((d) => d.status === 'IN_TRANSIT') && (

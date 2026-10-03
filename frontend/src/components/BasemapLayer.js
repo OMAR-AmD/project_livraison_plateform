@@ -120,6 +120,10 @@ export default function BasemapLayer({ onStatusChange }) {
         url={tileUrl}
         attribution={ATTRIBUTION}
         eventHandlers={{ tileerror: handleError, tileload: handleTileLoad }}
+        // Zoom past the tile grid: Leaflet upscales the deepest native tiles
+        // instead of refusing to zoom in any further.
+        maxZoom={19}
+        maxNativeZoom={18}
         // Keeps the map legible instead of blank while retrying.
         errorTileUrl={FALLBACK_TILE}
       />

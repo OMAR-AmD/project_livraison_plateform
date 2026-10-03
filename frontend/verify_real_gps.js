@@ -9,7 +9,9 @@
  *     GPS ("Sharing live location") and actually PATCH the coordinates the
  *     browser reports to /courier/deliveries/{id}/location;
  *   - the courier can override the choice with the header button, and the
- *     override sticks (the auto-selector must not fight the user).
+ *     override sticks (the auto-selector must not fight the user);
+ *   - while broadcasting real GPS the app must request a screen wake lock, or a
+ *     phone that sleeps silences the stream and the client reads "Signal lost".
  *
  * WHY IT IS NOT A TRIVIAL CHECK
  * The two device profiles must land on OPPOSITE modes, and the phone case also
@@ -20,6 +22,8 @@
  * Flip `return !canUseRealGps;` to `return true;` in src/lib/gpsMode.js: the
  * phone check fails ("Simulating GPS"). Flip it to `return false;`: the laptop
  * check fails ("Sharing live location"). Both were verified to fail.
+ * Delete the wake-lock effect in CourierView.js: the "requests a screen wake
+ * lock" check fails.
  *
  * RUN  (the backend must be up; WEB points at a frontend built from this tree)
  * node verify_real_gps.js
@@ -152,6 +156,26 @@ async function main() {
       permissions: ['geolocation'],
       geolocation: STUB,
     });
+
+    // Count wake-lock requests without depending on the headless browser
+    // exposing the API: stub it in when it is missing.
+    await phoneCtx.addInitScript(() => {
+      window.__wakeLockRequests = 0;
+      if (!navigator.wakeLock) {
+        Object.defineProperty(navigator, 'wakeLock', {
+          configurable: true,
+          value: {
+            request: async () => ({ release: async () => {}, addEventListener: () => {} }),
+          },
+        });
+      }
+      const request = navigator.wakeLock.request.bind(navigator.wakeLock);
+      navigator.wakeLock.request = (...args) => {
+        window.__wakeLockRequests += 1;
+        return request(...args);
+      };
+    });
+
     const phonePage = await phoneCtx.newPage();
 
     let broadcast = null;
@@ -166,6 +190,16 @@ async function main() {
     const liveBadge = phonePage.getByText('Sharing live location');
     await liveBadge.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
     check('the phone defaults to real GPS', await liveBadge.isVisible().catch(() => false));
+
+    // The wake lock is what keeps the phone screen on so the stream survives.
+    let wakeLocks = 0;
+    const wakeDeadline = Date.now() + 15000;
+    while (Date.now() < wakeDeadline) {
+      wakeLocks = await phonePage.evaluate(() => window.__wakeLockRequests || 0);
+      if (wakeLocks >= 1) break;
+      await phonePage.waitForTimeout(500);
+    }
+    check('sharing real GPS requests a screen wake lock', wakeLocks >= 1, `${wakeLocks} request(s)`);
 
     const closes = () =>
       broadcast &&
