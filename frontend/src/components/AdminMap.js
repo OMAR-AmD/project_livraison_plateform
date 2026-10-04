@@ -87,7 +87,7 @@ export default function AdminMap({ deliveries }) {
   }, [deliveries]);
 
   useEffect(() => {
-    const activeDeliveries = deliveries.filter(d => d.status === 'IN_TRANSIT');
+    const activeDeliveries = deliveries.filter(d => d.status === 'IN_TRANSIT' || d.status === 'ARRIVED');
     if (activeDeliveries.length === 0) return;
 
     // We only want to fetch initial location and route ONCE per courier
@@ -170,7 +170,7 @@ export default function AdminMap({ deliveries }) {
       <MapContainer center={[33.5731, -7.5898]} zoom={12} style={{ height: '100%', width: '100%' }}>
         <BasemapLayer />
         
-        <GlobalMapBounds deliveries={deliveries.filter(d => d.status === 'IN_TRANSIT' || d.status === 'ASSIGNED')} />
+        <GlobalMapBounds deliveries={deliveries.filter(d => d.status === 'IN_TRANSIT' || d.status === 'ARRIVED' || d.status === 'ASSIGNED')} />
 
         {/* Render Routes */}
         {Object.entries(courierRoutes).map(([email, path]) => (
@@ -182,7 +182,7 @@ export default function AdminMap({ deliveries }) {
         ))}
 
         {/* Render Deliveries (Pickups and Dropoffs) */}
-        {deliveries.filter(d => d.status === 'IN_TRANSIT' || d.status === 'ASSIGNED').map((d) => {
+        {deliveries.filter(d => d.status === 'IN_TRANSIT' || d.status === 'ARRIVED' || d.status === 'ASSIGNED').map((d) => {
           
           return (
             <div key={`del-${d.id}`}>

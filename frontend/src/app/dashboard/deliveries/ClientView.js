@@ -179,6 +179,7 @@ export default function ClientView() {
   // most one live order; prefer the one already moving, otherwise the one that
   // just got a courier.
   const trackedDelivery =
+    deliveries.find((d) => d.status === 'ARRIVED') ||
     deliveries.find((d) => d.status === 'IN_TRANSIT') ||
     deliveries.find((d) => d.status === 'ASSIGNED') ||
     null;
@@ -277,7 +278,7 @@ export default function ClientView() {
                       </td>
                       <td className="table-cell">
                         <div className="flex items-center justify-end gap-2">
-                          {d.status === 'IN_TRANSIT' && (
+                          {(d.status === 'IN_TRANSIT' || d.status === 'ARRIVED') && (
                             <button onClick={() => setTrackingDelivery(d)} className="btn-secondary btn-sm">
                               Track
                             </button>
@@ -314,7 +315,7 @@ export default function ClientView() {
                               </svg>
                             </button>
                           )}
-                          {(d.status === 'PENDING' || d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT') && (
+                          {(d.status === 'PENDING' || d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT' || d.status === 'ARRIVED') && (
                             <button onClick={() => setCodeDelivery(d)} className="btn-secondary btn-sm">
                               Code
                             </button>
@@ -366,7 +367,7 @@ export default function ClientView() {
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {d.status === 'IN_TRANSIT' && (
+                    {(d.status === 'IN_TRANSIT' || d.status === 'ARRIVED') && (
                       <button onClick={() => setTrackingDelivery(d)} className="btn-secondary btn-sm flex-1">
                         Track
                       </button>
@@ -381,7 +382,7 @@ export default function ClientView() {
                         Cancel order
                       </button>
                     )}
-                    {(d.status === 'PENDING' || d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT') && (
+                    {(d.status === 'PENDING' || d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT' || d.status === 'ARRIVED') && (
                       <button onClick={() => setCodeDelivery(d)} className="btn-secondary btn-sm flex-1">
                         Code
                       </button>

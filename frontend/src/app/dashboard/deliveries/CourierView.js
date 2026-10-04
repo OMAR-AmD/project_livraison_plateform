@@ -29,7 +29,10 @@ export default function CourierView() {
   // Held while we broadcast real GPS so the phone screen does not sleep and
   // silence the position stream.
   const wakeLockRef = useRef(null);
-  const hasInTransit = deliveries.some((d) => d.status === 'IN_TRANSIT');
+  // Out delivering means moving (IN_TRANSIT) or waiting at the door (ARRIVED):
+  // in both cases the position keeps flowing and the screen stays awake.
+  const isOnTour = (s) => s === 'IN_TRANSIT' || s === 'ARRIVED';
+  const hasOnTour = deliveries.some((d) => isOnTour(d.status));
 
   useEffect(() => {
     fetchDeliveries();
@@ -41,8 +44,8 @@ export default function CourierView() {
   // simulated route. A manual choice always wins over this default.
   useEffect(() => {
     if (gpsModeChosenRef.current) return;
-    const hasInTransit = deliveries.some(d => d.status === 'IN_TRANSIT');
-    setIsSimulating(hasInTransit ? defaultToSimulation(detectGpsEnvironment()) : false);
+    const hasActive = deliveries.some(d => isOnTour(d.status));
+    setIsSimulating(hasActive ? defaultToSimulation(detectGpsEnvironment()) : false);
   }, [deliveries]);
 
   // Fetch optimal path when simulation starts
@@ -54,7 +57,7 @@ export default function CourierView() {
           let startLng = currentCoords.lng;
 
           // Find an active delivery to spawn near its pickup location
-          const activeDelivery = deliveries.find(d => d.status === 'IN_TRANSIT' || d.status === 'ASSIGNED');
+          const activeDelivery = deliveries.find(d => d.status === 'IN_TRANSIT' || d.status === 'ARRIVED' || d.status === 'ASSIGNED');
           if (activeDelivery && activeDelivery.pickupLat && activeDelivery.pickupLng) {
             startLat = activeDelivery.pickupLat - 0.005; // slight offset (~500m)
             startLng = activeDelivery.pickupLng - 0.005;
@@ -91,6 +94,9 @@ export default function CourierView() {
   }, [isSimulating]);
 
   useEffect(() => {
+    const onTourDeliveries = deliveries.filter(d => isOnTour(d.status));
+    // Auto-completion is IN_TRANSIT-only: an ARRIVED order waits at the door
+    // for the human or the handover code, and the simulator must not seal it.
     const inTransitDeliveries = deliveries.filter(d => d.status === 'IN_TRANSIT');
     
     const cleanup = () => {
@@ -104,7 +110,7 @@ export default function CourierView() {
       }
     };
 
-    if (inTransitDeliveries.length > 0) {
+    if (onTourDeliveries.length > 0) {
       if (isSimulating) {
         // --- SIMULATION MODE ---
         if (watchIdRef.current !== null && navigator.geolocation) {
@@ -120,10 +126,13 @@ export default function CourierView() {
                 simIntervalRef.current = null;
                 addToast('Simulation reached destination!', 'success');
                 
-                // Auto-complete deliveries
-                inTransitDeliveries.forEach(d => {
-                  handleStatusChange(d.id, 'DELIVERED');
-                });
+                // Auto-complete deliveries (IN_TRANSIT only — ARRIVED waits
+                // for the human or the handover code, never the simulator).
+                deliveries
+                  .filter(d => d.status === 'IN_TRANSIT')
+                  .forEach(d => {
+                    handleStatusChange(d.id, 'DELIVERED');
+                  });
                 return prev;
               }
               
@@ -140,7 +149,7 @@ export default function CourierView() {
               if (simIndexRef.current > simPath.length) {
                 simIndexRef.current = simPath.length;
               }
-              inTransitDeliveries.forEach(d => {
+              onTourDeliveries.forEach(d => {
                 courierSendLocation(d.id, nextPoint.lat, nextPoint.lng)
                   .catch(err => console.warn('Mock Location broadcast failed:', err));
               });
@@ -160,7 +169,7 @@ export default function CourierView() {
           watchIdRef.current = navigator.geolocation.watchPosition(
             ({ coords }) => {
               setCurrentCoords({ lat: coords.latitude, lng: coords.longitude });
-              inTransitDeliveries.forEach(d => {
+              onTourDeliveries.forEach(d => {
                 courierSendLocation(d.id, coords.latitude, coords.longitude)
                   .catch(err => console.warn('Location broadcast failed:', err));
               });
@@ -190,7 +199,7 @@ export default function CourierView() {
   // back to the simulator. The lock is best-effort: a browser without the API
   // simply keeps its previous behaviour.
   useEffect(() => {
-    const broadcasting = !isSimulating && hasInTransit;
+    const broadcasting = !isSimulating && hasOnTour;
 
     if (!broadcasting || typeof navigator === 'undefined' || !('wakeLock' in navigator)) {
       if (wakeLockRef.current) {
@@ -234,7 +243,7 @@ export default function CourierView() {
         wakeLockRef.current = null;
       }
     };
-  }, [isSimulating, hasInTransit]);
+  }, [isSimulating, hasOnTour]);
 
   const fetchDeliveries = async () => {
     try {
@@ -312,14 +321,14 @@ export default function CourierView() {
               ? 'Nothing assigned to you.'
               : `${deliveries.length} stop${deliveries.length === 1 ? '' : 's'} on your round`}
           </p>
-          {hasInTransit && !isSimulating && (
+          {hasOnTour && !isSimulating && (
             <p className="mt-1 text-xs text-content-faint">
               Broadcasting your real GPS — the screen is kept awake so the position keeps flowing.
             </p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {deliveries.some((d) => d.status === 'IN_TRANSIT') && (
+          {deliveries.some((d) => isOnTour(d.status)) && (
             <span className="inline-flex items-center gap-2 rounded-md border border-signal-500/25 bg-signal-500/10 px-3 py-2 text-xs font-semibold text-signal-400">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-400 opacity-75" />
@@ -328,7 +337,7 @@ export default function CourierView() {
               {isSimulating ? 'Simulating GPS' : 'Sharing live location'}
             </span>
           )}
-          {deliveries.some((d) => d.status === 'IN_TRANSIT') && (
+          {deliveries.some((d) => isOnTour(d.status)) && (
             <button
               onClick={toggleGpsMode}
               className="btn-secondary shrink-0"
@@ -412,7 +421,7 @@ export default function CourierView() {
                       </td>
                       <td className="table-cell">
                         <div className="flex items-center justify-end gap-2">
-                          {d.status === 'IN_TRANSIT' && (
+                          {d.status === 'ARRIVED' && (
                             <button onClick={() => setScanDelivery(d)} className="btn-secondary btn-sm">
                               Scan code
                             </button>
@@ -459,7 +468,7 @@ export default function CourierView() {
                   </div>
 
                   <div className="mt-3 flex gap-2">
-                    {d.status === 'IN_TRANSIT' && (
+                    {d.status === 'ARRIVED' && (
                       <button onClick={() => setScanDelivery(d)} className="btn-secondary btn-sm flex-1">
                         Scan code
                       </button>

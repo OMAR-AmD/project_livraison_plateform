@@ -142,7 +142,7 @@ export default function AdminView() {
     deliveries.filter(
       (d) =>
         d.courierId === courierId &&
-        (d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT')
+        (d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT' || d.status === 'ARRIVED')
     ).length;
 
   const handleDelete = async (deliveryId) => {
@@ -283,7 +283,7 @@ export default function AdminView() {
                               onChange={(e) => handleStatusOverride(d, e.target.value)}
                               className="input btn-sm max-w-[9rem] cursor-pointer"
                             >
-                              {['PENDING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'].map((s) => (
+                              {['PENDING', 'ASSIGNED', 'IN_TRANSIT', 'ARRIVED', 'DELIVERED', 'CANCELLED'].map((s) => (
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
@@ -362,7 +362,7 @@ export default function AdminView() {
                         onChange={(e) => handleStatusOverride(d, e.target.value)}
                         className="input btn-sm flex-1 cursor-pointer"
                       >
-                        {['PENDING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'].map((s) => (
+                        {['PENDING', 'ASSIGNED', 'IN_TRANSIT', 'ARRIVED', 'DELIVERED', 'CANCELLED'].map((s) => (
                           <option key={s} value={s}>{s}</option>
                         ))}
                       </select>

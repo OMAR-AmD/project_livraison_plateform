@@ -153,7 +153,9 @@ export default function ClientLiveMap({ delivery }) {
         <p className="border-t border-line px-4 py-2 text-xs text-content-faint">
           {delivery.status === 'ASSIGNED'
             ? 'Your courier is assigned and will start broadcasting shortly.'
-            : 'Waiting for the courier to start broadcasting.'}
+            : delivery.status === 'ARRIVED'
+              ? 'Your courier has arrived — show them your handover code.'
+              : 'Waiting for the courier to start broadcasting.'}
         </p>
       )}
     </section>

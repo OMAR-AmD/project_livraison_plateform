@@ -2,12 +2,14 @@
  * Does the handover-code flow seal a delivery without GPS proximity?
  *
  * WHAT THIS CHECKS
- * The courier confirms a delivery by typing the six digits the client shows,
- * with no position anywhere near the drop-off. It asserts: (1) the client Code
- * modal shows a QR plus the exact code the API issued; (2) a wrong code is
- * refused and the order is unchanged (fail closed, no silent GPS fallback);
- * (3) the right code seals the delivery with codeVerified=true and a 64-char
- * HMAC. The GPS-only path is covered by verify_proof.js and must keep passing.
+ * The courier advances an order to ARRIVED (the door step), then confirms it
+ * by typing the six digits the client shows, with no position anywhere near
+ * the drop-off. It asserts: (1) ASSIGNED cannot skip to DELIVERED; (2) the
+ * client Code modal shows a QR plus the exact code the API issued; (3) a wrong
+ * code is refused and the order is unchanged (fail closed, no silent GPS
+ * fallback); (4) the right code seals the delivery with codeVerified=true and
+ * a 64-char HMAC. The GPS-only path is covered by verify_proof.js and must
+ * keep passing.
  *
  * WHY IT IS NOT A TRIVIAL CHECK
  * Each assertion is a different failure: a mismatched modal code means the UI
@@ -112,6 +114,20 @@ async function main() {
     check('the order is paid and dispatched', !!courierEmail, courierEmail || 'never assigned');
     if (!courierEmail) return;
 
+    // Forward-only: jumping straight from ASSIGNED to DELIVERED is refused.
+    const guardCourier = (await api(BASE, 'POST', '/api/v1/auth/login', null, {
+      email: courierEmail, password: PASSWORD,
+    })).token;
+    let skipped = false;
+    try {
+      await api(BASE, 'PATCH', `/api/v1/courier/deliveries/${orderId}/status`, guardCourier, {
+        status: 'DELIVERED',
+      });
+    } catch (e) {
+      skipped = e.status === 400;
+    }
+    check('ASSIGNED cannot skip to DELIVERED', skipped, skipped ? 'HTTP 400' : 'jump accepted (bad)');
+
     const issued = await api(BASE, 'GET', `/api/v1/client/deliveries/${orderId}/handover-code`, clientToken);
     check('the API issues a six-digit code', /^\d{6}$/.test(issued.code || ''), issued.code);
 
@@ -187,6 +203,14 @@ async function main() {
       await startBtn.first().click();
       await courierPage.waitForTimeout(1500);
     }
+    // The door step that arms the handover code.
+    console.log('step: marking arrived');
+    await courierPage.locator('button:visible', { hasText: 'Mark arrived' }).first().click({ timeout: 30000 });
+    await courierPage.waitForTimeout(1500);
+    const arrived = await api(BASE, 'GET', '/api/v1/client/deliveries', clientToken)
+      .then((list) => list.find((d) => d.id === orderId));
+    check('the order is arrived', arrived && arrived.status === 'ARRIVED', arrived && arrived.status);
+    if (!arrived || arrived.status !== 'ARRIVED') return;
     console.log('step: opening Scan code modal');
     await courierPage.locator('button:visible', { hasText: 'Scan code' }).first().click({ timeout: 30000 });
     const digits = courierPage.getByLabel('Handover code digits');
@@ -200,7 +224,7 @@ async function main() {
     check('a wrong code is refused on screen', refusal >= 1, `${refusal} refusal(s)`);
     const stillThere = await api(BASE, 'GET', '/api/v1/client/deliveries', clientToken)
       .then((list) => list.find((d) => d.id === orderId));
-    check('the refused order is unchanged', stillThere && stillThere.status !== 'DELIVERED', stillThere && stillThere.status);
+    check('the refused order is unchanged', stillThere && stillThere.status === 'ARRIVED', stillThere && stillThere.status);
 
     await digits.fill(issued.code);
     await courierPage.getByRole('button', { name: 'Confirm', exact: true }).click();

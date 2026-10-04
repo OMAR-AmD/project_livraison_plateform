@@ -381,7 +381,7 @@ public class DeliveryService {
             for (User potentialCourier : allCouriers) {
                 // Get this courier's active deliveries
                 List<Delivery> activeDeliveries = deliveryRepository.findByCourierOrderByCreatedAtDesc(potentialCourier).stream()
-                    .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT)
+                    .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT || d.getStatus() == DeliveryStatus.ARRIVED)
                     .collect(java.util.stream.Collectors.toList());
 
                 int loadBefore = activeDeliveries.size();
@@ -660,6 +660,19 @@ public class DeliveryService {
 
         if (delivery.getCourier() == null || !delivery.getCourier().getId().equals(courier.getId())) {
             throw new IllegalArgumentException("You are not assigned to this delivery");
+        }
+
+        // Forward-only for the courier: ARRIVED is the door step (it arms the
+        // handover code), DELIVERED closes the order with a sealed proof.
+        // Skipping straight from ASSIGNED to DELIVERED would bypass the arrival
+        // signal the client watches for; the admin override stays unrestricted.
+        if (newStatus == DeliveryStatus.ARRIVED && delivery.getStatus() != DeliveryStatus.IN_TRANSIT) {
+            throw new IllegalArgumentException("Mark the delivery arrived only while it is in transit");
+        }
+        if (newStatus == DeliveryStatus.DELIVERED
+                && delivery.getStatus() != DeliveryStatus.IN_TRANSIT
+                && delivery.getStatus() != DeliveryStatus.ARRIVED) {
+            throw new IllegalArgumentException("A delivery can only be completed once it is in transit or arrived");
         }
 
         if (newStatus == DeliveryStatus.DELIVERED) {
@@ -976,6 +989,8 @@ public class DeliveryService {
                 activities.add(new AdminActivityDTO("DELIVERY_ASSIGNED", "Delivery '" + d.getDescription() + "' assigned to " + courierEmail, d.getUpdatedAt()));
             } else if (d.getStatus() == DeliveryStatus.IN_TRANSIT) {
                 activities.add(new AdminActivityDTO("DELIVERY_IN_TRANSIT", "Delivery '" + d.getDescription() + "' is out for delivery", d.getUpdatedAt()));
+            } else if (d.getStatus() == DeliveryStatus.ARRIVED) {
+                activities.add(new AdminActivityDTO("DELIVERY_ARRIVED", "Courier arrived with delivery '" + d.getDescription() + "'", d.getUpdatedAt()));
             } else if (d.getStatus() == DeliveryStatus.CANCELLED) {
                 activities.add(new AdminActivityDTO("DELIVERY_CANCELLED", "Delivery '" + d.getDescription() + "' was cancelled", d.getUpdatedAt()));
             } else if (d.getStatus() == DeliveryStatus.PENDING) {

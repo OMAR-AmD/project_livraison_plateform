@@ -7,11 +7,13 @@
  * that: it let a courier move a delivery backwards (IN_TRANSIT back to ASSIGNED),
  * and it made the normal case — "this is done" — indistinguishable from the
  * destructive one. The state machine only moves forward, so the UI now offers
- * exactly the one transition that is legal from the current state.
+ * exactly the one transition that is legal from the current state. ARRIVED is
+ * the door step: it arms the handover code, and DELIVERED seals the proof.
  */
 const NEXT = {
   ASSIGNED: { status: 'IN_TRANSIT', label: 'Start delivery', className: 'btn-primary btn-sm' },
-  IN_TRANSIT: { status: 'DELIVERED', label: 'Mark delivered', className: 'btn-primary btn-sm' },
+  IN_TRANSIT: { status: 'ARRIVED', label: 'Mark arrived', className: 'btn-primary btn-sm' },
+  ARRIVED: { status: 'DELIVERED', label: 'Mark delivered', className: 'btn-primary btn-sm' },
 };
 
 export default function StopAction({ delivery, onChange, block = false }) {

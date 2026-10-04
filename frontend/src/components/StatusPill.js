@@ -10,6 +10,7 @@
  *   PENDING     neutral   — accepted, not yet assigned
  *   ASSIGNED    info      — a courier has it
  *   IN_TRANSIT  accent    — the one state the operator is watching
+ *   ARRIVED     accent    — at the door, handover code armed
  *   DELIVERED   success   — done
  *   CANCELLED   danger    — dead
  */
@@ -17,6 +18,7 @@ const STATES = {
   PENDING: { label: 'Pending', className: 'status-pending' },
   ASSIGNED: { label: 'Assigned', className: 'status-assigned' },
   IN_TRANSIT: { label: 'In transit', className: 'status-in-transit' },
+  ARRIVED: { label: 'Arrived', className: 'status-in-transit' },
   DELIVERED: { label: 'Delivered', className: 'status-delivered' },
   CANCELLED: { label: 'Cancelled', className: 'status-cancelled' },
 };
@@ -38,6 +40,7 @@ export function StatusPill({ status }) {
   return (
     <span className={`${state.className} whitespace-nowrap`}>
       {status === 'IN_TRANSIT' && <span className="status-dot animate-pulse" />}
+  {status === 'ARRIVED' && <span className="status-dot animate-pulse" />}
       {status === 'DELIVERED' && (
         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />

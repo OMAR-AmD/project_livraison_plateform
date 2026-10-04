@@ -119,13 +119,18 @@ client1 always has an active one.
 Where GPS cannot place the courier within 500 m (courtyard, medina alley,
 dead battery zone), the recipient shows a code instead:
 
-1. **client1** — on the active order, **Code**: a QR plus six big digits.
+1. **courier1** — on the stop, **Mark arrived**. The order turns `ARRIVED`:
+   the client section reads "your courier has arrived", the position keeps
+   broadcasting, and the simulator will never auto-seal it — arrival waits
+   for the human or the code. Skipping straight from `ASSIGNED` to
+   `DELIVERED` is refused (HTTP 400); the admin override stays unrestricted.
+2. **client1** — on the active order, **Code**: a QR plus six big digits.
    The code is HMAC-derived per order, issued only to the owning client, and
    single-use (refused once the order closes).
-2. **courier1** — on the stop, **Scan code**: point the camera at the QR
+3. **courier1** — **Scan code**: point the camera at the QR
    (`BarcodeDetector`, no dependency) or type the six digits — the fallback
    that also makes the desktop demo work.
-3. A wrong code is refused with `Invalid handover code` and changes nothing;
+4. A wrong code is refused with `Invalid handover code` and changes nothing;
    the right one seals the delivery with `codeVerified`, even with no usable
    position (sealed coordinates fall back to the destination, with no distance
    claim — the proof never invents a GPS fix).

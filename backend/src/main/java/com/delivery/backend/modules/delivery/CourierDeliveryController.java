@@ -69,7 +69,7 @@ public class CourierDeliveryController {
         
         List<Delivery> myDeliveries = deliveryService.getRawDeliveriesForCourier(courier)
             .stream()
-            .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT)
+            .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT || d.getStatus() == DeliveryStatus.ARRIVED)
             .toList();
 
         return ResponseEntity.ok(routeOptimizationService.optimizeDeliveries(lat, lng, myDeliveries));
