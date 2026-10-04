@@ -126,8 +126,10 @@ def paired_stats(diffs):
     return mean, max(0.0, mean - half), mean + half
 
 
-def binom_ge(k, n, p=0.5):
-    """P(X >= k) for Binomial(n, p): is the win count significant?"""
+def binom_ge(k, n, p):
+    """P(X >= k) for Binomial(n, p): is the win count significant? p defaults
+    to a coin flip but callers pass 1/n_couriers: with 5 candidates a random
+    pick already wins 20% of the time, so 50% would flatter the baseline."""
     return sum(math.comb(n, i) * p ** i * (1 - p) ** (n - i) for i in range(k, n + 1))
 
 
@@ -224,16 +226,18 @@ def main():
                        "Part A is exact TSP; part B sequential insertion with the "
                        "backend's 45-min ride cap (balance only). "
                        "Absolute seconds illustrative."}
-    for label, rows in (("small_2x2", small), ("big_5x3", big)):
+    for label, rows, n_cand in (("small_2x2", small, 2), ("big_5x3", big, 5)):
         diffs = [r["times"][r["nearest_idx"]] - min(r["times"]) for r in rows]
         mean, lo, hi = paired_stats(diffs)
         wins = sum(1 for r in rows if r["times"][r["nearest_idx"]] <= min(r["times"]) * 1.02)
         n = len(rows)
-        print(f"\n  Part A {label}: {n} scenarios")
-        print(f"    nearest optimal: {wins}/{n} (p={binom_ge(wins, n):.3f} vs coin flip)")
+        p_null = 1.0 / n_cand
+        print(f"\n  Part A {label}: {n} scenarios ({n_cand} candidates, null p={p_null:.2f})")
+        print(f"    nearest optimal: {wins}/{n} (p={binom_ge(wins, n, p_null):.3f} vs random pick)")
         print(f"    paired gap nearest-minus-cheapest: mean {mean:.0f}s, 95% CI [{lo:.0f}, {hi:.0f}]")
-        report[label] = {"scenarios": n, "nearest_optimal": wins,
-                         "binom_p_vs_coinflip": binom_ge(wins, n),
+        report[label] = {"scenarios": n, "candidates": n_cand,
+                         "nearest_optimal": wins,
+                         "binom_p_vs_random_pick": binom_ge(wins, n, p_null),
                          "paired_gap_mean_s": mean, "paired_gap_ci95": [lo, hi]}
 
     bal = part_b(12, 3, seed=90909)

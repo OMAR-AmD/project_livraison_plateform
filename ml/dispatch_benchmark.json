@@ -1,9 +1,10 @@
 {
- "note": "Greedy vs cheapest-round dispatch on real OSRM times. Part A is exact TSP; part B sequential insertion (balance only). No 45-min cap; absolute seconds illustrative.",
+ "note": "Greedy vs cheapest-round dispatch on real OSRM times. Part A is exact TSP; part B sequential insertion with the backend's 45-min ride cap (balance only). Absolute seconds illustrative.",
  "small_2x2": {
   "scenarios": 200,
+  "candidates": 2,
   "nearest_optimal": 123,
-  "binom_p_vs_coinflip": 0.0007008452893978953,
+  "binom_p_vs_random_pick": 0.0007008452893978953,
   "paired_gap_mean_s": 231.11899999999997,
   "paired_gap_ci95": [
    179.38811622491383,
@@ -12,8 +13,9 @@
  },
  "big_5x3": {
   "scenarios": 60,
+  "candidates": 5,
   "nearest_optimal": 20,
-  "binom_p_vs_coinflip": 0.9968911986703366,
+  "binom_p_vs_random_pick": 0.010668297571044236,
   "paired_gap_mean_s": 444.05500000000006,
   "paired_gap_ci95": [
    321.9649561736031,
