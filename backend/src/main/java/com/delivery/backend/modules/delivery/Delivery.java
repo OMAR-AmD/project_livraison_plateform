@@ -69,6 +69,18 @@ public class Delivery {
     @Column(name = "proof_hash", length = 64)
     private String proofHash;
 
+    // Voie A — handover-code factor. Set only when DELIVERED is sealed with a
+    // verified code; never cleared, so the proof keeps which factors it had.
+    // Nullable Boolean on purpose: ddl-auto:update adds the column with NULL
+    // for pre-existing rows, and Hibernate refuses to put NULL into a
+    // primitive (JpaSystemException on every read of an old order). NULL reads
+    // as false via isCodeVerified() below; new seals always write true/false.
+    @Column(name = "code_verified")
+    private Boolean codeVerified;
+
+    @Column(name = "code_verified_at")
+    private LocalDateTime codeVerifiedAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", nullable = false)
     private User client;
@@ -145,6 +157,10 @@ public class Delivery {
     public void setProofDistanceM(Double proofDistanceM) { this.proofDistanceM = proofDistanceM; }
     public String getProofHash() { return proofHash; }
     public void setProofHash(String proofHash) { this.proofHash = proofHash; }
+    public boolean isCodeVerified() { return Boolean.TRUE.equals(codeVerified); }
+    public void setCodeVerified(boolean codeVerified) { this.codeVerified = codeVerified; }
+    public LocalDateTime getCodeVerifiedAt() { return codeVerifiedAt; }
+    public void setCodeVerifiedAt(LocalDateTime codeVerifiedAt) { this.codeVerifiedAt = codeVerifiedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

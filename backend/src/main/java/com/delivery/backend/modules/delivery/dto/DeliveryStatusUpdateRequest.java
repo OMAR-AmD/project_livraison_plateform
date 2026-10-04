@@ -17,6 +17,13 @@ public class DeliveryStatusUpdateRequest {
 
     private Double longitude;
 
+    /**
+     * Six-digit handover code shown by the client at the door (Sprint Voie A).
+     * Optional: absent means the GPS-only path. Present but wrong fails closed
+     * with a clear message rather than silently falling back to GPS.
+     */
+    private String handoverCode;
+
     public DeliveryStatusUpdateRequest() {}
 
     public DeliveryStatus getStatus() { return status; }
@@ -25,4 +32,6 @@ public class DeliveryStatusUpdateRequest {
     public void setLatitude(Double latitude) { this.latitude = latitude; }
     public Double getLongitude() { return longitude; }
     public void setLongitude(Double longitude) { this.longitude = longitude; }
+    public String getHandoverCode() { return handoverCode; }
+    public void setHandoverCode(String handoverCode) { this.handoverCode = handoverCode; }
 }

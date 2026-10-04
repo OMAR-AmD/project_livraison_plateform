@@ -11,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -91,5 +92,16 @@ public class ClientDeliveryController {
             @Valid @RequestBody com.delivery.backend.modules.delivery.dto.RatingRequest request,
             @AuthenticationPrincipal User client) {
         return ResponseEntity.ok(deliveryService.rateDelivery(id, request.getRating(), request.getReviewComment(), client));
+    }
+
+    /**
+     * The six-digit handover code the recipient shows at the door. Owner-only:
+     * issued to the client who owns the order, verified from the courier side.
+     */
+    @GetMapping("/{id}/handover-code")
+    public ResponseEntity<Map<String, String>> handoverCode(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User client) {
+        return ResponseEntity.ok(Map.of("code", deliveryService.getHandoverCode(id, client)));
     }
 }

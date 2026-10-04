@@ -7,6 +7,7 @@ import OptimizedRouteModal from '@/components/OptimizedRouteModal';
 import { StatusPill, PaymentTag } from '@/components/StatusPill';
 import CourierStats from '@/components/CourierStats';
 import StopAction from '@/components/StopAction';
+import ScanHandoverModal from '@/components/ScanHandoverModal';
 import EmptyState, { EmptyIcons } from '@/components/EmptyState';
 import { defaultToSimulation, detectGpsEnvironment } from '@/lib/gpsMode';
 
@@ -259,15 +260,31 @@ export default function CourierView() {
     }
   };
 
-  const handleStatusChange = async (id, newStatus) => {
+  const handleStatusChange = async (id, newStatus, extra = {}) => {
     try {
-      await courierUpdateStatus(id, newStatus);
+      await courierUpdateStatus(id, newStatus, extra);
       addToast('Status updated', 'success');
       fetchDeliveries();
       // Completing a stop is what moves the counters, so refresh them too.
       fetchStats();
     } catch (err) {
       addToast(err.message, 'error');
+    }
+  };
+
+  // Handover-code confirm (Voie A): sealing by scanned/typed code instead of
+  // GPS proximity. Errors stay inside the scan modal so the courier can retry
+  // the digits; success closes it and refreshes like any status change.
+  const [scanDelivery, setScanDelivery] = useState(null);
+  const handleScanConfirm = async (code) => {
+    try {
+      await courierUpdateStatus(scanDelivery.id, 'DELIVERED', { handoverCode: code });
+      addToast('Delivery confirmed by handover code', 'success');
+      setScanDelivery(null);
+      fetchDeliveries();
+      fetchStats();
+    } catch (err) {
+      throw new Error(err.message || 'Could not confirm with this code.');
     }
   };
 
@@ -394,7 +411,12 @@ export default function CourierView() {
                         {d.price != null ? `${d.price.toFixed(2)} MAD` : '—'}
                       </td>
                       <td className="table-cell">
-                        <div className="flex items-center justify-end">
+                        <div className="flex items-center justify-end gap-2">
+                          {d.status === 'IN_TRANSIT' && (
+                            <button onClick={() => setScanDelivery(d)} className="btn-secondary btn-sm">
+                              Scan code
+                            </button>
+                          )}
                           <StopAction delivery={d} onChange={handleStatusChange} />
                         </div>
                       </td>
@@ -436,7 +458,12 @@ export default function CourierView() {
                     <PaymentTag paymentStatus={d.paymentStatus} />
                   </div>
 
-                  <div className="mt-3">
+                  <div className="mt-3 flex gap-2">
+                    {d.status === 'IN_TRANSIT' && (
+                      <button onClick={() => setScanDelivery(d)} className="btn-secondary btn-sm flex-1">
+                        Scan code
+                      </button>
+                    )}
                     <StopAction delivery={d} onChange={handleStatusChange} block />
                   </div>
                 </li>
@@ -451,6 +478,13 @@ export default function CourierView() {
         onClose={() => setIsRouteModalOpen(false)}
         courierPos={currentCoords}
       />
+      {scanDelivery && (
+        <ScanHandoverModal
+          delivery={scanDelivery}
+          onConfirm={handleScanConfirm}
+          onClose={() => setScanDelivery(null)}
+        />
+      )}
     </div>
   );
 }

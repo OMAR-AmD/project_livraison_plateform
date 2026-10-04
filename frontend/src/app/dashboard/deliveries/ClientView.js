@@ -8,6 +8,7 @@ import ClientLiveMap from '@/components/ClientLiveMap';
 import RatingModal from '@/components/RatingModal';
 import PaymentModal from '@/components/PaymentModal';
 import LocationPicker from '@/components/LocationPicker';
+import HandoverCodeModal from '@/components/HandoverCodeModal';
 import ChatWidget from '@/components/ChatWidget';
 import { useToast } from '@/components/Toast';
 import { clientRateDelivery, clientDeleteDelivery } from '@/lib/api';
@@ -21,6 +22,7 @@ export default function ClientView() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [trackingDelivery, setTrackingDelivery] = useState(null);
   const [ratingDelivery, setRatingDelivery] = useState(null);
+  const [codeDelivery, setCodeDelivery] = useState(null);
   const [formData, setFormData] = useState({ description: '', pickupAddress: '', dropoffAddress: '', pickupLat: null, pickupLng: null });
   const [submitting, setSubmitting] = useState(false);
   const [gpsError, setGpsError] = useState('');
@@ -312,6 +314,11 @@ export default function ClientView() {
                               </svg>
                             </button>
                           )}
+                          {(d.status === 'PENDING' || d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT') && (
+                            <button onClick={() => setCodeDelivery(d)} className="btn-secondary btn-sm">
+                              Code
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -372,6 +379,11 @@ export default function ClientView() {
                     {d.status === 'PENDING' && (
                       <button onClick={() => handleCancel(d.id)} className="btn-danger btn-sm flex-1">
                         Cancel order
+                      </button>
+                    )}
+                    {(d.status === 'PENDING' || d.status === 'ASSIGNED' || d.status === 'IN_TRANSIT') && (
+                      <button onClick={() => setCodeDelivery(d)} className="btn-secondary btn-sm flex-1">
+                        Code
                       </button>
                     )}
                     {(d.status === 'DELIVERED' || d.status === 'CANCELLED') && (
@@ -471,6 +483,13 @@ export default function ClientView() {
         deliveryId={ratingDelivery?.id}
         onSubmit={handleRateSubmit}
       />
+      {codeDelivery && (
+        <HandoverCodeModal
+          deliveryId={codeDelivery.id}
+          description={codeDelivery.description}
+          onClose={() => setCodeDelivery(null)}
+        />
+      )}
       
       <ChatWidget />
     </div>

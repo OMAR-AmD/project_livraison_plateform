@@ -224,17 +224,26 @@ public class ChatService {
                 Rules:
                 1. Always answer in English.
                 2. When referring to an order, always use the exact ID shown above; never guess or invent one.
-                3. If the customer asks to cancel an order, call the 'cancelDeliveryFunction' tool with the ID of
+                3. If the customer asks about a specific order, call the
+                   'deliveryDetailsFunction' tool with the exact ID from the list above
+                   and answer from what it returns.
+                4. If the customer asks to cancel an order, call the 'cancelDeliveryFunction' tool with the ID of
                    one of THEIR OWN orders. The tool refuses anything else - do not retry with a different ID.
-                4. If you cannot answer from the documentation or the order list, say so politely.
-                5. Keep answers short. This is a customer support chat, not a document.
+                5. 'deliveryDetailsFunction' and 'cancelDeliveryFunction' are the ONLY
+                   functions that exist. Never invent another function name, never
+                   output JSON or a function call as text, and never narrate what you
+                   are doing ("I will call...", "Since the question...") - just give
+                   the final short answer.
+                6. If you cannot answer from the documentation, the order list, or a
+                   tool result, say so politely.
+                7. Keep answers short. This is a customer support chat, not a document.
                 """).render(Map.of("faq", faqContext, "deliveries", deliveriesContext));
 
         try {
             return chatClient.prompt()
                     .system(systemMessage)
                     .user(question)
-                    .functions("cancelDeliveryFunction")
+                    .functions("cancelDeliveryFunction", "deliveryDetailsFunction")
                     .call()
                     .content();
         } catch (Exception e) {

@@ -114,6 +114,27 @@ Note: the simulation reaches the destination and auto-marks the order
 rush hour (07–09, 17–19). For repeated demos, book a **fresh** order each time so
 client1 always has an active one.
 
+### Handover code — confirming at the door (~1 min)
+
+Where GPS cannot place the courier within 500 m (courtyard, medina alley,
+dead battery zone), the recipient shows a code instead:
+
+1. **client1** — on the active order, **Code**: a QR plus six big digits.
+   The code is HMAC-derived per order, issued only to the owning client, and
+   single-use (refused once the order closes).
+2. **courier1** — on the stop, **Scan code**: point the camera at the QR
+   (`BarcodeDetector`, no dependency) or type the six digits — the fallback
+   that also makes the desktop demo work.
+3. A wrong code is refused with `Invalid handover code` and changes nothing;
+   the right one seals the delivery with `codeVerified`, even with no usable
+   position (sealed coordinates fall back to the destination, with no distance
+   claim — the proof never invents a GPS fix).
+
+Talking point: the code proves code-presence, GPS proves place — the sealed
+proof records which factors it had. A forwarded photo of the code would defeat
+it, which is stated on screen rather than hidden. Verify with
+`node verify_handover.js` (10 checks).
+
 ### Optional: the courier's real phone GPS
 
 The mode is picked automatically: the laptop and the rehearsal stay on the

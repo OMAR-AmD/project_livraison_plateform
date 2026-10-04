@@ -76,6 +76,15 @@ public class DeliveryProofService {
 
     private final byte[] proofKey;
 
+    /**
+     * Separate subkey for handover codes. A code is HMAC-verified, never
+     * stored, so leaking the deliveries table reveals no codes; and a code
+     * cannot be mistaken for a proof seal because the derivation contexts differ.
+     */
+    private static final String HANDOVER_KEY_CONTEXT = "swiftdeliver/handover-code/v1";
+
+    private final byte[] handoverKey;
+
     public DeliveryProofService(@Value("${application.proof.hmac-key}") String rootSecret) {
         if (rootSecret == null || rootSecret.isBlank()) {
             // Fail loud rather than defaulting. A well-known fallback key would
@@ -86,6 +95,7 @@ public class DeliveryProofService {
                             + "could forge a valid proof of delivery");
         }
         this.proofKey = deriveKey(rootSecret);
+        this.handoverKey = hmacRaw(proofKey, HANDOVER_KEY_CONTEXT);
     }
 
     /** A seal together with the exact timestamp that was sealed. */
@@ -150,13 +160,49 @@ public class DeliveryProofService {
 
     /** Hex HMAC-SHA256 of the payload under the derived proof key. */
     public String hmacHex(String payload) {
+        return HexFormat.of().formatHex(hmacRaw(proofKey, payload));
+    }
+
+    private static byte[] hmacRaw(byte[] key, String payload) {
         try {
             Mac mac = Mac.getInstance(MAC_ALGORITHM);
-            mac.init(new SecretKeySpec(proofKey, MAC_ALGORITHM));
-            return HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+            mac.init(new SecretKeySpec(key, MAC_ALGORITHM));
+            return mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException("HMAC-SHA256 unavailable on this JVM", e);
         }
+    }
+
+    /**
+     * Six-digit handover code for a delivery, shown by the client and typed or
+     * scanned by the courier at the door.
+     *
+     * <p>RFC 4226 dynamic truncation over an HMAC of the delivery ID: 31 bits,
+     * six digits, zero-padded. Deterministic per delivery and verifiable
+     * without storage; single-use is enforced by the order lifecycle (a code
+     * for a DELIVERED or CANCELLED order is refused, and sealing moves the
+     * order to DELIVERED). A forwarded photo of the code defeats it — the code
+     * proves code-presence, GPS proves place, and the proof records which
+     * factors sealed it.
+     */
+    public String handoverCode(UUID deliveryId) {
+        byte[] mac = hmacRaw(handoverKey, "swiftdeliver/handover/v1|" + deliveryId);
+        int offset = mac[mac.length - 1] & 0x0F;
+        int code = ((mac[offset] & 0x7F) << 24)
+                | ((mac[offset + 1] & 0xFF) << 16)
+                | ((mac[offset + 2] & 0xFF) << 8)
+                | (mac[offset + 3] & 0xFF);
+        return String.format("%06d", code % 1_000_000);
+    }
+
+    /** Constant-time comparison; anything malformed is simply not the code. */
+    public boolean verifyHandoverCode(UUID deliveryId, String code) {
+        if (code == null || !code.trim().matches("\\d{6}")) {
+            return false;
+        }
+        byte[] expected = handoverCode(deliveryId).getBytes(StandardCharsets.UTF_8);
+        byte[] actual = code.trim().getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(expected, actual);
     }
 
     /**

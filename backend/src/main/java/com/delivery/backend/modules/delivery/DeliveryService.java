@@ -477,6 +477,41 @@ public class DeliveryService {
         return new double[]{DEFAULT_COURIER_LAT, DEFAULT_COURIER_LNG};
     }
 
+    /**
+     * Single-order read for the assistant's details tool.
+     *
+     * <p>Same ownership rule as {@link #cancelDelivery}: a client sees only
+     * their own deliveries, and anything else is reported as "not found" so
+     * a guessed ID cannot be used to probe whether an order exists.
+     */
+    @Transactional(readOnly = true)
+    public DeliveryResponse getDeliveryForClient(UUID deliveryId, User client) {
+        Delivery delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
+
+        if (!delivery.getClient().getId().equals(client.getId())) {
+            throw new IllegalArgumentException("Delivery not found");
+        }
+
+        return toResponse(delivery);
+    }
+
+    /**
+     * Issues the handover code for an order to its owning client.
+     *
+     * <p>Refused for closed orders: a code for a DELIVERED or CANCELLED order
+     * is meaningless, and refusing it keeps the code single-use by construction
+     * — sealing moves the order to DELIVERED, after which no new code is issued.
+     */
+    @Transactional(readOnly = true)
+    public String getHandoverCode(UUID deliveryId, User client) {
+        DeliveryResponse d = getDeliveryForClient(deliveryId, client);
+        if (d.getStatus() == DeliveryStatus.DELIVERED || d.getStatus() == DeliveryStatus.CANCELLED) {
+            throw new IllegalArgumentException("No handover code for a closed delivery");
+        }
+        return proofService.handoverCode(deliveryId);
+    }
+
     @Transactional
     public DeliveryResponse cancelDelivery(UUID deliveryId, User client) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
@@ -597,7 +632,7 @@ public class DeliveryService {
 
     @Transactional
     public DeliveryResponse updateDeliveryStatus(UUID deliveryId, DeliveryStatus newStatus, User courier) {
-        return updateDeliveryStatus(deliveryId, newStatus, null, null, courier);
+        return updateDeliveryStatus(deliveryId, newStatus, null, null, null, courier);
     }
 
     /**
@@ -611,10 +646,15 @@ public class DeliveryService {
      * is refused as well: a delivery cannot be confirmed from the other side of
      * the city. What is sealed, and why it is an HMAC rather than a hash, is
      * documented on {@link DeliveryProofService}.
+     *
+     * <p>A verified handover code (Sprint Voie A) waives the proximity rule but
+     * not the record: the proof keeps which factors sealed it, and without any
+     * position the sealed coordinates fall back to the destination itself with
+     * no distance claim, so the proof never invents a GPS fix.
      */
     @Transactional
     public DeliveryResponse updateDeliveryStatus(UUID deliveryId, DeliveryStatus newStatus,
-                                                 Double proofLat, Double proofLng, User courier) {
+                                                 Double proofLat, Double proofLng, String handoverCode, User courier) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
@@ -623,7 +663,7 @@ public class DeliveryService {
         }
 
         if (newStatus == DeliveryStatus.DELIVERED) {
-            sealDeliveryProof(delivery, proofLat, proofLng, courier);
+            sealDeliveryProof(delivery, proofLat, proofLng, handoverCode, courier);
         }
 
         delivery.setStatus(newStatus);
@@ -663,7 +703,17 @@ public class DeliveryService {
         return toResponse(delivery);
     }
 
-    private void sealDeliveryProof(Delivery delivery, Double proofLat, Double proofLng, User courier) {
+    private void sealDeliveryProof(Delivery delivery, Double proofLat, Double proofLng,
+                                    String handoverCode, User courier) {
+        boolean codeOk = false;
+        if (handoverCode != null && !handoverCode.isBlank()) {
+            if (!proofService.verifyHandoverCode(delivery.getId(), handoverCode)) {
+                throw new IllegalArgumentException(
+                        "Invalid handover code: check the 6 digits and try again");
+            }
+            codeOk = true;
+        }
+
         Double lat = proofLat;
         Double lng = proofLng;
 
@@ -675,16 +725,26 @@ public class DeliveryService {
             }
         }
 
+        // A verified code waives the proximity rule but not the record: without
+        // any position the sealed coordinates fall back to the destination itself
+        // with no distance claim, so the proof never invents a GPS fix.
+        boolean fallbackToDropoff = false;
         if (lat == null || lng == null) {
-            throw new IllegalArgumentException(
-                    "Live GPS position required to confirm delivery: broadcast your location first");
+            if (codeOk && delivery.getDropoffLat() != null && delivery.getDropoffLng() != null) {
+                lat = delivery.getDropoffLat();
+                lng = delivery.getDropoffLng();
+                fallbackToDropoff = true;
+            } else {
+                throw new IllegalArgumentException(
+                        "Live GPS position required to confirm delivery: broadcast your location first");
+            }
         }
 
         Double distanceM = null;
-        if (delivery.getDropoffLat() != null && delivery.getDropoffLng() != null) {
+        if (!fallbackToDropoff && delivery.getDropoffLat() != null && delivery.getDropoffLng() != null) {
             distanceM = proofService.haversineMeters(lat, lng,
                     delivery.getDropoffLat(), delivery.getDropoffLng());
-            if (distanceM > DeliveryProofService.MAX_DELIVERY_DISTANCE_M) {
+            if (!codeOk && distanceM > DeliveryProofService.MAX_DELIVERY_DISTANCE_M) {
                 throw new IllegalArgumentException(
                         "Delivery refused: you are " + Math.round(distanceM)
                                 + " m from the destination (limit "
@@ -706,6 +766,10 @@ public class DeliveryService {
         delivery.setDeliveredAt(seal.sealedAt());
         delivery.setProofDistanceM(distanceM);
         delivery.setProofHash(seal.hash());
+        if (codeOk) {
+            delivery.setCodeVerified(true);
+            delivery.setCodeVerifiedAt(LocalDateTime.now());
+        }
         log.info("Delivery {} sealed: proof {} at {} m from destination.",
                 delivery.getId(), seal.hash().substring(0, 12),
                 distanceM == null ? -1 : Math.round(distanceM));

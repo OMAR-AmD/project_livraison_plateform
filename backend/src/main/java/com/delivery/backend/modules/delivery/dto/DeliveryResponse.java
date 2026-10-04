@@ -32,6 +32,8 @@ public class DeliveryResponse {
     private LocalDateTime deliveredAt;
     private Double proofDistanceM;
     private String proofHash;
+    private boolean codeVerified;
+    private LocalDateTime codeVerifiedAt;
 
     public DeliveryResponse() {}
 
@@ -59,6 +61,8 @@ public class DeliveryResponse {
         this.deliveredAt = delivery.getDeliveredAt();
         this.proofDistanceM = delivery.getProofDistanceM();
         this.proofHash = delivery.getProofHash();
+        this.codeVerified = delivery.isCodeVerified();
+        this.codeVerifiedAt = delivery.getCodeVerifiedAt();
     }
 
     public UUID getId() { return id; }
@@ -111,4 +115,8 @@ public class DeliveryResponse {
     public void setProofDistanceM(Double proofDistanceM) { this.proofDistanceM = proofDistanceM; }
     public String getProofHash() { return proofHash; }
     public void setProofHash(String proofHash) { this.proofHash = proofHash; }
+    public boolean isCodeVerified() { return codeVerified; }
+    public void setCodeVerified(boolean codeVerified) { this.codeVerified = codeVerified; }
+    public LocalDateTime getCodeVerifiedAt() { return codeVerifiedAt; }
+    public void setCodeVerifiedAt(LocalDateTime codeVerifiedAt) { this.codeVerifiedAt = codeVerifiedAt; }
 }

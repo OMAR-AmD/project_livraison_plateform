@@ -198,6 +198,14 @@ export async function clientGetCourierLocation(id) {
   return apiFetch(`/client/deliveries/${id}/location`);
 }
 
+/**
+ * The six-digit handover code the recipient shows at the door. Owner-only on
+ * the server; refused for closed deliveries so a code is single-use.
+ */
+export async function clientGetHandoverCode(id) {
+  return apiFetch(`/client/deliveries/${id}/handover-code`);
+}
+
 export async function clientRateDelivery(id, rating, reviewComment = '') {
   return apiFetch(`/client/deliveries/${id}/rate`, {
     method: 'POST',
@@ -219,10 +227,10 @@ export async function courierGetStats() {
   return apiFetch('/courier/deliveries/stats');
 }
 
-export async function courierUpdateStatus(id, status) {
+export async function courierUpdateStatus(id, status, extra = {}) {
   return apiFetch(`/courier/deliveries/${id}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, ...extra }),
   });
 }
 
