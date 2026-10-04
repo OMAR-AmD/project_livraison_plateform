@@ -226,7 +226,12 @@ public class ChatService {
                 2. When referring to an order, always use the exact ID shown above; never guess or invent one.
                 3. If the customer asks about a specific order, call the
                    'deliveryDetailsFunction' tool with the exact ID from the list above
-                   and answer from what it returns.
+                   and answer from what it returns. The tool also carries live
+                   telemetry when the courier is broadcasting (speed in m/s,
+                   metres to the drop-off, position age in seconds): use it to
+                   answer "where is my courier" and "how fast" questions with
+                   numbers. If the telemetry fields are null, say the position
+                   is not fresh instead of inventing one.
                 4. If the customer asks to cancel an order, call the 'cancelDeliveryFunction' tool with the ID of
                    one of THEIR OWN orders. The tool refuses anything else - do not retry with a different ID.
                 5. 'deliveryDetailsFunction' and 'cancelDeliveryFunction' are the ONLY

@@ -256,7 +256,9 @@ public class FraudTrailStore {
                         n.path("fraud").asBoolean(),
                         n.path("speedMps").asDouble(),
                         n.path("stallSeconds").asDouble(),
-                        n.path("dist").asDouble(),
+                        // Written as "distanceToTargetM" by record() above;
+                        // reading "dist" silently defaulted every point to 0 m.
+                        n.path("distanceToTargetM").asDouble(),
                         n.path("threshold").asDouble()));
             } catch (Exception ignored) {
                 // Un point illisible ne doit pas faire tomber toute la courbe.

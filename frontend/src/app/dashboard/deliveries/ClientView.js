@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { clientGetDeliveries, clientCreateDelivery, clientCancelDelivery, clientQuoteDelivery, clientPayDelivery } from '@/lib/api';
 import Modal from '@/components/Modal';
 import TrackingModal from '@/components/TrackingModal';
@@ -23,6 +23,12 @@ export default function ClientView() {
   const [trackingDelivery, setTrackingDelivery] = useState(null);
   const [ratingDelivery, setRatingDelivery] = useState(null);
   const [codeDelivery, setCodeDelivery] = useState(null);
+  // Mirrors "any dialog open" for the polling closure below, which captures
+  // the first render's state. Without this, a background refresh pops the
+  // rating dialog over the booking/payment/code dialogs the user is using.
+  const modalOpenRef = useRef(false);
+  modalOpenRef.current =
+    isModalOpen || isPaymentModalOpen || !!trackingDelivery || !!ratingDelivery || !!codeDelivery;
   const [formData, setFormData] = useState({ description: '', pickupAddress: '', dropoffAddress: '', pickupLat: null, pickupLng: null });
   const [submitting, setSubmitting] = useState(false);
   const [gpsError, setGpsError] = useState('');
@@ -52,8 +58,10 @@ export default function ClientView() {
       const data = await clientGetDeliveries();
       setDeliveries(data);
       
-      // Auto-trigger rating modal if a delivery was just delivered
-      if (isBackgroundUpdate) {
+      // Auto-trigger rating modal if a delivery was just delivered. Never
+      // while another dialog is open: the rating would paint over booking,
+      // payment or the handover code the user is actively using.
+      if (isBackgroundUpdate && !modalOpenRef.current) {
         const justDelivered = data.find(d => d.status === 'DELIVERED' && d.rating == null);
         if (justDelivered) {
           setRatingDelivery(prev => prev ? prev : justDelivered);
@@ -176,11 +184,13 @@ export default function ClientView() {
   };
 
   // The order the client is currently waiting on. A client realistically has at
-  // most one live order; prefer the one already moving, otherwise the one that
-  // just got a courier.
+  // most one live order; prefer the one already moving, otherwise the one at
+  // the door, otherwise the one that just got a courier. IN_TRANSIT stays
+  // first on purpose: a stale ARRIVED order (no more broadcasts) must never
+  // pin the live section while another order is actually moving.
   const trackedDelivery =
-    deliveries.find((d) => d.status === 'ARRIVED') ||
     deliveries.find((d) => d.status === 'IN_TRANSIT') ||
+    deliveries.find((d) => d.status === 'ARRIVED') ||
     deliveries.find((d) => d.status === 'ASSIGNED') ||
     null;
 

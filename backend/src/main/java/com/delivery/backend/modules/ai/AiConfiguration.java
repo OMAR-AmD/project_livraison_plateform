@@ -68,11 +68,14 @@ public class AiConfiguration {
     public record DeliveryDetailsRequest(String deliveryId) {}
     public record DeliveryDetailsResponse(String status, String description, String pickupAddress,
             String dropoffAddress, String orderStatus, Double price, String paymentStatus,
-            String courierEmail, String message) {}
+            String courierEmail, Double courierLatitude, Double courierLongitude,
+            Double courierSpeedMps, Double distanceToTargetM, Long positionAgeSeconds,
+            String message) {}
 
     @Bean
     @Description("Read the live status and details of one of the customer's own deliveries by its ID (UUID).")
-    public Function<DeliveryDetailsRequest, DeliveryDetailsResponse> deliveryDetailsFunction(DeliveryService deliveryService) {
+    public Function<DeliveryDetailsRequest, DeliveryDetailsResponse> deliveryDetailsFunction(
+            DeliveryService deliveryService, FraudTrailStore fraudTrailStore) {
         return request -> {
             // Same rule as cancellation. The model supplies only an ID, and a
             // small model will happily echo back an ID it invented or one
@@ -82,31 +85,60 @@ public class AiConfiguration {
             if (auth == null || !(auth.getPrincipal() instanceof User client)) {
                 log.warn("Rejected deliveryDetails tool call from an unauthenticated principal");
                 return new DeliveryDetailsResponse("ERROR", null, null, null, null, null, null, null,
-                        "Action refused: unauthenticated user.");
+                        null, null, null, null, null, "Action refused: unauthenticated user.");
             }
 
             String rawId = request.deliveryId();
             if (rawId == null || rawId.isBlank()) {
                 return new DeliveryDetailsResponse("ERROR", null, null, null, null, null, null, null,
-                        "No order ID was supplied.");
+                        null, null, null, null, null, "No order ID was supplied.");
             }
 
             try {
                 UUID id = UUID.fromString(rawId.trim());
                 var d = deliveryService.getDeliveryForClient(id, client);
+
+                // Live telemetry, best effort: the newest scored fix carries
+                // speed, distance-to-target and freshness; the live endpoint
+                // carries the coordinates. Anything missing stays null and the
+                // prompt tells the model to say so rather than invent it.
+                Double lat = null, lng = null, speed = null, dist = null;
+                Long ageS = null;
+                try {
+                    var trail = fraudTrailStore.trail(id);
+                    if (trail != null && !trail.points().isEmpty()) {
+                        var newest = trail.points().get(trail.points().size() - 1);
+                        speed = newest.speedMps();
+                        dist = newest.distanceToTargetM();
+                        ageS = Math.max(0, (System.currentTimeMillis() - newest.at()) / 1000);
+                    }
+                } catch (Exception e) {
+                    log.warn("deliveryDetails telemetry read failed for {}: {}", id, e.toString());
+                }
+                try {
+                    var loc = deliveryService.getCourierLocationForClient(id, client);
+                    if (loc != null) {
+                        lat = loc.getLatitude();
+                        lng = loc.getLongitude();
+                    }
+                } catch (Exception e) {
+                    log.warn("deliveryDetails location read failed for {}: {}", id, e.toString());
+                }
+
                 return new DeliveryDetailsResponse("SUCCESS", d.getDescription(),
                         d.getPickupAddress(), d.getDropoffAddress(),
                         d.getStatus() != null ? d.getStatus().name() : null,
-                        d.getPrice(), d.getPaymentStatus(), d.getCourierEmail(), null);
+                        d.getPrice(), d.getPaymentStatus(), d.getCourierEmail(),
+                        lat, lng, speed, dist, ageS, null);
             } catch (IllegalArgumentException e) {
                 // Unknown ID or someone else's order: the same generic answer,
                 // so a guessed ID cannot probe whether an order exists.
                 return new DeliveryDetailsResponse("ERROR", null, null, null, null, null, null, null,
-                        e.getMessage());
+                        null, null, null, null, null, e.getMessage());
             } catch (Exception e) {
                 log.error("deliveryDetails tool call failed", e);
                 return new DeliveryDetailsResponse("ERROR", null, null, null, null, null, null, null,
-                        "Could not read the order. The ID may be invalid.");
+                        null, null, null, null, null, "Could not read the order. The ID may be invalid.");
             }
         };
     }
