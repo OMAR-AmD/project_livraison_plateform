@@ -73,7 +73,10 @@ export default function LocationPickerMap({ lat, lng, onChange, referenceLat, re
   }, [lat, lng, referenceLat, referenceLng, map]);
 
   return (
-    <div className="h-48 w-full rounded-lg overflow-hidden border border-line z-0">
+    // `isolate` traps Leaflet's internal z-index scale (panes up to 1000)
+    // inside this map. Without it those layers compete with the whole page
+    // and paint over the chat panel (z-50). Same fix on every map wrapper.
+    <div className="isolate h-48 w-full overflow-hidden rounded-lg border border-line z-0">
       <MapContainer
         center={[lat || 33.5731, lng || -7.5898]}
         zoom={13}

@@ -166,7 +166,7 @@ export default function AdminMap({ deliveries }) {
   const activeCouriers = Object.keys(courierPositions);
 
   return (
-    <div style={{ height: '600px', width: '100%' }} className="rounded-xl overflow-hidden border border-line mb-6">
+    <div style={{ height: '600px', width: '100%' }} className="isolate rounded-xl overflow-hidden border border-line mb-6">
       <MapContainer center={[33.5731, -7.5898]} zoom={12} style={{ height: '100%', width: '100%' }}>
         <BasemapLayer />
         

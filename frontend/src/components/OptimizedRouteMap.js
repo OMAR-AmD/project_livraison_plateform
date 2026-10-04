@@ -86,7 +86,10 @@ export default function OptimizedRouteMap({ orderedWaypoints, courierPos, height
   const center = points.length > 0 ? points[0] : [33.5731, -7.5898]; // Default
 
   return (
-    <div style={{ height, width: '100%' }}>
+    // `isolate` traps Leaflet's internal z-index scale inside this map. The
+    // live section is not wrapped in a positioned parent, so without it the
+    // panes (up to z-1000) paint over the chat panel (z-50).
+    <div style={{ height, width: '100%' }} className="isolate">
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}>
         <BasemapLayer />
         

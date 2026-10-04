@@ -84,7 +84,7 @@ export default function TrackingMap({ pickupLat, pickupLng, dropoffLat, dropoffL
   const center = points.length > 0 ? points[0] : [33.5731, -7.5898]; // Default Casablanca, Morocco
 
   return (
-    <div style={{ height: '400px', width: '100%' }}>
+    <div style={{ height: '400px', width: '100%' }} className="isolate">
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}>
         <BasemapLayer />
         
