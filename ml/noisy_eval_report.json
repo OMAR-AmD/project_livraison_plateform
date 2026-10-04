@@ -1,0 +1,39 @@
+{
+ "note": "Noisy holdout of the shipped RF (OSRM roads, 10 m noise, unseen loop pattern). Synthetic labels; pipeline validation, not field performance.",
+ "shipped_threshold": 0.8199999999999998,
+ "shipped_trees": 60,
+ "parity_worst_diff": 2.220446049250313e-16,
+ "broadcast": {
+  "tp": 444,
+  "fn": 559,
+  "fp": 254,
+  "tn": 22833,
+  "precision": 0.6361031518624641,
+  "recall": 0.4426719840478564,
+  "f1": 0.5220458553791887
+ },
+ "per_kind": {
+  "teleport": {
+   "rate": 1.0,
+   "n": 40
+  },
+  "sprint": {
+   "rate": 0.795,
+   "n": 200
+  },
+  "drift_then_vanish": {
+   "rate": 0.5965770171149144,
+   "n": 409
+  },
+  "loop": {
+   "rate": 0.002824858757062147,
+   "n": 354
+  }
+ },
+ "runs": {
+  "fraud_alerted": 130,
+  "fraud_total": 158,
+  "honest_untouched": 34,
+  "honest_total": 60
+ }
+}
