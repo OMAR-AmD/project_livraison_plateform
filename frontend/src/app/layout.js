@@ -2,6 +2,7 @@ import localFont from 'next/font/local';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/components/Toast';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 /**
  * Fonts are self-hosted from src/app/fonts. Using next/font/google or an
@@ -24,6 +25,19 @@ export const metadata = {
   title: 'SwiftDeliver — Autonomous Last-Mile Delivery',
   description:
     'Self-hosted delivery platform: AI dispatch, real-time tracking and a local RAG assistant.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'SwiftDeliver',
+    statusBarStyle: 'black-translucent',
+  },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#f97316',
 };
 
 export default function RootLayout({ children }) {
@@ -33,6 +47,7 @@ export default function RootLayout({ children }) {
         <AuthProvider>
           <ToastProvider>{children}</ToastProvider>
         </AuthProvider>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

@@ -75,7 +75,7 @@ export default function ChatWidget() {
           `pointer-events-none` outside the conditional makes the open panel
           fully visible while every click passes straight through it. */}
       <div
-        className={`fixed bottom-24 right-4 z-50 flex h-[32rem] max-h-[70vh] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-overlay transition-all duration-200 sm:right-6 sm:w-96 ${
+        className={`fixed bottom-24 right-4 z-50 flex h-[32rem] max-h-[70dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-overlay transition-all duration-200 sm:right-6 sm:w-96 ${
           isOpen ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'
         }`}
         role="dialog"
@@ -162,6 +162,7 @@ export default function ChatWidget() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about your delivery…"
               aria-label="Message the assistant"
+              enterKeyHint="send"
               className="input flex-1"
               disabled={isLoading}
             />

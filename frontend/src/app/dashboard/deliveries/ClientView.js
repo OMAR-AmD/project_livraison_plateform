@@ -425,7 +425,7 @@ export default function ClientView() {
               }}
             />
             <div className="flex justify-end mt-2">
-              <button type="button" onClick={getGPS} className="text-xs px-2 py-1 bg-info-500/20 text-info-400 border border-info-500/30 rounded hover:bg-info-500/30 transition-colors">
+              <button type="button" onClick={getGPS} className="px-4 py-2.5 text-sm bg-info-500/20 text-info-400 border border-info-500/30 rounded-lg hover:bg-info-500/30 transition-colors">
                 📍 Use my GPS location
               </button>
             </div>

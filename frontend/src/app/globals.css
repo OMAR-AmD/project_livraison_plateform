@@ -108,6 +108,15 @@
     @apply w-full px-3.5 py-2.5 bg-surface-sunken border border-line rounded-md text-content placeholder:text-content-faint text-sm transition-colors hover:border-line-strong focus:border-signal-500 focus:outline-none focus:ring-1 focus:ring-signal-500/50;
   }
 
+  /* iOS Safari zooms the whole page when focusing an input under 16 px,
+     which shoves fixed panels (chat, scan form) off screen and leaves the
+     user stranded mid-conversation. Desktop keeps text-sm; phones get 16 px. */
+  @media (max-width: 767px) {
+    .input {
+      font-size: 16px;
+    }
+  }
+
   select.input {
     /* Native select arrows render inconsistently on a dark background. */
     @apply appearance-none bg-no-repeat pr-10;

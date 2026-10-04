@@ -103,7 +103,7 @@ export default function Modal({ isOpen, onClose, title, description, children, f
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         tabIndex={-1}
-        className={`relative flex max-h-[92vh] w-full ${widths[size]} animate-slide-up flex-col overflow-hidden rounded-t-xl border border-line bg-surface shadow-overlay outline-none sm:rounded-xl`}
+        className={`relative flex h-[100dvh] max-h-[100dvh] w-full ${widths[size]} animate-slide-up flex-col overflow-hidden border border-line bg-surface shadow-overlay outline-none rounded-none sm:h-auto sm:max-h-[92vh] sm:rounded-xl`}
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div className="min-w-0">
