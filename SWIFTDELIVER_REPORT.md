@@ -64,7 +64,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 - Behavior: returns friendly "unavailable" if Ollama missing/retrieval fails → rest of platform unaffected.
 - UI: floating ChatWidget in client dashboard (bottom-right). Only visible to clients (mounted in ClientView).
 - Cloud: not cloud-wide (no Ollama on Render) → clients on phone hitting cloud get unavailable response. Works when backend can reach local Ollama (demo/LAN).
-- Demo recording (one take, scripted against the live stack): `swiftdeliver_full_demo.webm` — map booking + payment, handover code shown, courier start/arrive/scan to a codeVerified seal, 5-star rating, admin fleet view, assistant order + refund answers. [LINK TO UPLOAD — replace before submitting]
+- Demo recording (one take, scripted against the live stack): `swiftdeliver_full_demo.webm` — map booking + payment, handover code shown, courier start/arrive/scan to a codeVerified seal, 5-star rating, admin fleet view, assistant order + refund answers. Watch (unlisted): https://www.youtube.com/watch?v=QY6oAdbI_DA
 
 ### 4.2 Trajectory Fraud Detection (ML, in-product)
 - Type: supervised Random Forest (60 trees). Trained offline in Python on synthetic plausible/impossible trajectories; exported as gzipped JSON.
