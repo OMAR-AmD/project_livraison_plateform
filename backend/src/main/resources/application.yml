@@ -96,6 +96,15 @@ application:
       max-per-account: ${LOGIN_MAX_PER_ACCOUNT:5}
       max-per-client: ${LOGIN_MAX_PER_CLIENT:50}
       window-seconds: ${LOGIN_WINDOW_SECONDS:900}
+    # Wrong-handover-code limiter. The 6-digit code is only a million guesses
+    # wide, so without a ceiling it is brute-forceable. Per-delivery is the tight
+    # control (5 tries, then wait); per-courier is a looser backstop so a stolen
+    # courier account cannot walk the code across its deliveries. Only failed
+    # attempts count, and a correct code clears that delivery's counter.
+    handover-rate-limit:
+      max-per-delivery: ${HANDOVER_MAX_PER_DELIVERY:5}
+      max-per-courier: ${HANDOVER_MAX_PER_COURIER:20}
+      window-seconds: ${HANDOVER_WINDOW_SECONDS:900}
   proof:
     # Root secret for the delivery-proof MAC (see DeliveryProofService). The key
     # actually used to seal is derived from this value rather than being equal to

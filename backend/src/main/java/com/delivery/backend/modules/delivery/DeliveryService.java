@@ -51,8 +51,9 @@ public class DeliveryService {
     private final TrajectoryFraudService trajectoryFraudService;
     private final FraudTrailStore fraudTrailStore;
     private final DeliveryProofService proofService;
+    private final HandoverCodeRateLimiter handoverCodeRateLimiter;
 
-    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore, DeliveryProofService proofService) {
+    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore, DeliveryProofService proofService, HandoverCodeRateLimiter handoverCodeRateLimiter) {
         this.deliveryRepository = deliveryRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
@@ -64,6 +65,7 @@ public class DeliveryService {
         this.trajectoryFraudService = trajectoryFraudService;
         this.fraudTrailStore = fraudTrailStore;
         this.proofService = proofService;
+        this.handoverCodeRateLimiter = handoverCodeRateLimiter;
     }
 
     public void updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
@@ -720,10 +722,17 @@ public class DeliveryService {
                                     String handoverCode, User courier) {
         boolean codeOk = false;
         if (handoverCode != null && !handoverCode.isBlank()) {
+            // Check the allowance before comparing. A blocked guesser is refused
+            // with a 429 (and a Retry-After) instead of another "invalid code",
+            // which is also the only answer that does not leak how many digits
+            // they got right.
+            handoverCodeRateLimiter.checkAllowed(delivery.getId(), courier.getId());
             if (!proofService.verifyHandoverCode(delivery.getId(), handoverCode)) {
+                handoverCodeRateLimiter.recordFailure(delivery.getId(), courier.getId());
                 throw new IllegalArgumentException(
                         "Invalid handover code: check the 6 digits and try again");
             }
+            handoverCodeRateLimiter.recordSuccess(delivery.getId());
             codeOk = true;
         }
 
@@ -902,8 +911,15 @@ public class DeliveryService {
         List<Delivery> all = deliveryRepository.findByCourierOrderByCreatedAtDesc(courier);
 
         long completed = all.stream().filter(d -> d.getStatus() == DeliveryStatus.DELIVERED).count();
+        // ARRIVED is the doorstep: the courier is still carrying the parcel and
+        // will close it minutes later. Leaving it out made that order vanish from
+        // both "in progress" and "completed" mid-handover, so a courier watching
+        // their own counter saw the job disappear at the exact moment they were
+        // standing at the door.
         long active = all.stream()
-                .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED || d.getStatus() == DeliveryStatus.IN_TRANSIT)
+                .filter(d -> d.getStatus() == DeliveryStatus.ASSIGNED
+                        || d.getStatus() == DeliveryStatus.IN_TRANSIT
+                        || d.getStatus() == DeliveryStatus.ARRIVED)
                 .count();
         long cancelled = all.stream().filter(d -> d.getStatus() == DeliveryStatus.CANCELLED).count();
 
@@ -941,8 +957,13 @@ public class DeliveryService {
         long total = deliveryRepository.count();
         long completedToday = deliveryRepository.countByStatusAndUpdatedAtAfter(
                 DeliveryStatus.DELIVERED, LocalDateTime.now().with(LocalTime.MIN));
-        long active = deliveryRepository.countByStatus(DeliveryStatus.IN_TRANSIT) + 
-                      deliveryRepository.countByStatus(DeliveryStatus.ASSIGNED);
+        // ARRIVED counts as active here too, for the same reason as the courier
+        // stats: an order at the door is in flight, not finished, and the admin
+        // "active deliveries" tile must not dip while a courier completes a
+        // handover.
+        long active = deliveryRepository.countByStatus(DeliveryStatus.IN_TRANSIT)
+                + deliveryRepository.countByStatus(DeliveryStatus.ARRIVED)
+                + deliveryRepository.countByStatus(DeliveryStatus.ASSIGNED);
         Double avgRating = deliveryRepository.getAverageRating();
         if (avgRating == null) avgRating = 0.0;
         

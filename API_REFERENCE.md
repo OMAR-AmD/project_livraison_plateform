@@ -196,6 +196,11 @@ distinguishable from a genuine zero-star score. It is averaged over the **rated*
 deliveries only: including unrated orders as zeros would report a courier with
 one 5-star review and two unrated orders as 1.7.
 
+`activeDeliveries` counts `ASSIGNED`, `IN_TRANSIT` **and** `ARRIVED`. An order at
+the door is still in the courier's hands: excluding `ARRIVED` made it disappear
+from both "in progress" and "completed" during the handover, exactly when the
+courier is looking at the screen.
+
 There is no id parameter, so a courier cannot read another courier's numbers.
 
 ### `PATCH /courier/deliveries/{id}/status`
@@ -292,6 +297,10 @@ Platform metrics.
 ```
 `totalRevenue` sums orders whose `paymentStatus` is `PAID` only — orders awaiting
 payment, voided orders and refunds are excluded.
+
+`activeDeliveries` counts `ASSIGNED`, `IN_TRANSIT` and `ARRIVED`, matching the
+courier endpoint, so the platform tile does not dip while a courier completes a
+handover at the door.
 
 ### `GET /admin/deliveries/activities`
 The ten most recent platform events, for the activity feed.

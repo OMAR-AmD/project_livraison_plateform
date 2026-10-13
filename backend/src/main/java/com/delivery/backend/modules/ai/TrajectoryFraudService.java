@@ -78,6 +78,8 @@ public class TrajectoryFraudService {
         boolean started;
         Instant lastAlert;
         Instant lastFixAt;
+        /** Fixes signalés d'affilée, y compris le dernier évalué. */
+        int consecutiveFlags;
     }
 
     /**
@@ -166,6 +168,12 @@ public class TrajectoryFraudService {
         double score = model.score(features);
         boolean fraud = score >= model.threshold();
 
+        // La règle de tournée, pas le fix isolé : trois fixes signalés d'affilée,
+        // ou un seul fix très chaud. Le compteur vit dans l'état parce que « trois
+        // d'affilée » n'existe pas dans un fix isolé.
+        st.consecutiveFlags = fraud ? st.consecutiveFlags + 1 : 0;
+        boolean runFlagged = RunRule.flagged(st.consecutiveFlags, score);
+
         // Mémoriser l'état pour le prochain fix.
         st.lastLat = lat;
         st.lastLng = lng;
@@ -176,7 +184,7 @@ public class TrajectoryFraudService {
         st.lastFixAt = now;
 
         boolean shouldNotify = false;
-        if (fraud) {
+        if (runFlagged) {
             if (st.lastAlert == null
                     || Duration.between(st.lastAlert, now).compareTo(ALERT_COOLDOWN) > 0) {
                 st.lastAlert = now;
@@ -188,7 +196,7 @@ public class TrajectoryFraudService {
             st.lastAlert = null;
         }
 
-        return new Verdict(score, model.threshold(), fraud, shouldNotify, features,
+        return new Verdict(score, model.threshold(), fraud, runFlagged, shouldNotify, features,
                 speed, st.stallSeconds, distanceToTarget);
     }
 
@@ -231,12 +239,15 @@ public class TrajectoryFraudService {
     /**
      * Résultat d'un broadcast.
      *
-     * @param fraud        le score dépasse le seuil
-     * @param shouldNotify une alerte doit partir : première fois seulement,
-     *                     les suivantes tombent dans le cooldown
+     * @param fraud        ce fix dépasse le seuil du modèle
+     * @param runFlagged   la règle de tournée est satisfaite (k=3 consécutifs,
+     *                     ou un seul fix ≥ 0,97) : c'est ce que voit le
+     *                     superviseur dans le badge
+     * @param shouldNotify une alerte doit partir : la règle est satisfaite et le
+     *                     cooldown est écoulé
      */
-    public record Verdict(double score, double threshold, boolean fraud, boolean shouldNotify,
-                          double[] features, double speedMps, double stallSeconds,
-                          double distanceToTargetM) {
+    public record Verdict(double score, double threshold, boolean fraud, boolean runFlagged,
+                          boolean shouldNotify, double[] features, double speedMps,
+                          double stallSeconds, double distanceToTargetM) {
     }
 }

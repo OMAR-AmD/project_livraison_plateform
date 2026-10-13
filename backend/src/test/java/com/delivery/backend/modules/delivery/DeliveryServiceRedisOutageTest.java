@@ -58,7 +58,8 @@ class DeliveryServiceRedisOutageTest {
                 mock(PricingService.class),
                 mock(TrajectoryFraudService.class),
                 mock(FraudTrailStore.class),
-                mock(DeliveryProofService.class));
+                mock(DeliveryProofService.class),
+                mock(HandoverCodeRateLimiter.class));
     }
 
     @Test

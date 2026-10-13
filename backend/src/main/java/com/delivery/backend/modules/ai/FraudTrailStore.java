@@ -131,9 +131,20 @@ public class FraudTrailStore {
                         double peakScore, double lastScore, long lastFixAt,
                         double threshold, List<Point> points) {
 
-        /** Au moins un fix au-dessus du seuil : c'est ce qui déclenche le badge. */
+        /** La tournée est signalée selon la règle de tournée (RunRule), pas au premier fix. */
         public boolean flagged() {
-            return flaggedFixes > 0;
+            // La même règle que l'alerte temps réel (RunRule) : k=3 fixes signalés
+            // d'affilée, ou un seul fix à score ≥ 0,97. Avant, le badge se levait
+            // au premier fix signalé, ce qui allumait 43 % des tournées honnêtes
+            // simulées. La trace est relue du plus ancien au plus récent, ce que
+            // la règle attend pour compter les séries.
+            List<Boolean> flags = new ArrayList<>(points.size());
+            List<Double> scores = new ArrayList<>(points.size());
+            for (Point p : points) {
+                flags.add(p.fraud());
+                scores.add(p.score());
+            }
+            return RunRule.runFlagged(flags, scores);
         }
 
         /**

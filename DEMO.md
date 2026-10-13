@@ -130,10 +130,12 @@ dead battery zone), the recipient shows a code instead:
 3. **courier1** — **Scan code**: point the camera at the QR
    (`BarcodeDetector`, no dependency) or type the six digits — the fallback
    that also makes the desktop demo work.
-4. A wrong code is refused with `Invalid handover code` and changes nothing;
-   the right one seals the delivery with `codeVerified`, even with no usable
-   position (sealed coordinates fall back to the destination, with no distance
-   claim — the proof never invents a GPS fix).
+4. A wrong code is refused with `Invalid handover code` and changes nothing.
+   Repeated wrong codes are **throttled** (HTTP 429 + `Retry-After`): 5 misses
+   per delivery, 20 per courier, per 15-minute window — so a six-digit code is
+   not brute-forceable. The right code seals the delivery with `codeVerified`,
+   even with no usable position (sealed coordinates fall back to the
+   destination, with no distance claim — the proof never invents a GPS fix).
 
 Talking point: the code proves code-presence, GPS proves place — the sealed
 proof records which factors it had. A forwarded photo of the code would defeat

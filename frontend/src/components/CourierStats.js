@@ -26,7 +26,7 @@ const TILES = [
   {
     key: 'activeDeliveries',
     label: 'In progress',
-    hint: 'assigned or in transit',
+    hint: 'assigned, in transit or at the door',
     accent: 'text-signal-400',
   },
   {

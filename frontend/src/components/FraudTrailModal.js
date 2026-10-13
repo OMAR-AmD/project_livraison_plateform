@@ -173,8 +173,9 @@ export default function FraudTrailModal({ isOpen, onClose, delivery, trail, full
                   <p className="rounded-md border border-danger-500/25 bg-danger-500/10 px-3 py-2 text-sm text-danger-300">
                     The model rated {trail.flaggedFixes} of {trail.totalFixes}{' '}
                     position updates above its {Math.round((fullTrail?.threshold ?? 0) * 100)}%
-                    threshold. The client has been told their delivery proof is
-                    under review.
+                    threshold. The run is flagged because three updates in a row
+                    were above it, or a single update scored 97% or more. The
+                    client has been told their delivery proof is under review.
                   </p>
                 )}
 

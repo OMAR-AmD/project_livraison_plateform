@@ -35,9 +35,9 @@ class CourierStatsTest {
 
         // The other constructor dependencies are never touched by
         // getCourierStats, so nulls are safe and keep the test free of Spring.
-        // Eleven arguments is past the point where this reads well; if a twelfth
-        // arrives, build the object through a small factory instead of appending.
-        return new DeliveryService(repository, null, null, null, null, null, null, null, null, null, null);
+        // A null handover-code limiter is fine here too: this test never reaches
+        // the delivery-confirmation path that would use it.
+        return new DeliveryService(repository, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private Delivery delivery(DeliveryStatus status, Integer rating) {
@@ -122,5 +122,26 @@ class CourierStatsTest {
         // not hidden by reclassifying PENDING as active.
         assertEquals(6, stats.completedDeliveries + stats.activeDeliveries + stats.cancelledDeliveries,
                 "PENDING must be counted in none of the three buckets, so the UI footnote triggers");
+    }
+
+    @Test
+    @DisplayName("an ARRIVED order is active: the courier is at the door, not finished")
+    void arrivedCountsAsActive() {
+        User courier = new User("courier1@swift.com", "x", com.delivery.backend.modules.auth.Role.LIVREUR);
+
+        DeliveryService.CourierStatsDTO stats = serviceReturning(List.of(
+                delivery(DeliveryStatus.IN_TRANSIT, null),
+                delivery(DeliveryStatus.ARRIVED, null),
+                delivery(DeliveryStatus.DELIVERED, 5)
+        )).getCourierStats(courier);
+
+        // The bug this pins: ARRIVED was in neither the active nor the completed
+        // bucket, so a delivery vanished from both counters the moment the
+        // courier reached the door -- exactly when they are looking at the
+        // screen to hand the phone over.
+        assertEquals(2, stats.activeDeliveries,
+                "IN_TRANSIT and ARRIVED are both still in the courier's hands");
+        assertEquals(1, stats.completedDeliveries);
+        assertEquals(3, stats.totalDeliveries);
     }
 }

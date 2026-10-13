@@ -10,10 +10,13 @@
  *                here would assert a measurement that was never made.
  *   clean      → "AI ok · peak 12%". Visible on purpose. If only alerts were
  *                shown, an admin would have no way to tell a fleet the model
- *                watches from one it ignores.
- *   flagged    → "AI alert · peak 97%". Peak rather than latest, because a
- *                courier who resumes driving normally must not erase the fact
- *                that the model fired.
+ *                watches from one it ignores. "Clean" means the RUN rule did
+ *                not fire, which is not the same as "no fix above threshold":
+ *                a run may carry one or two hot fixes and still be honest.
+ *   flagged    → "AI alert · peak 97%". The run rule fired: three flagged
+ *                fixes in a row, or a single fix at 97% or more. Peak rather
+ *                than latest, because a courier who resumes driving normally
+ *                must not erase the fact that the model fired.
  *
  * The percentage shown is the model's own output. It is not a confidence
  * interval, not a probability that this courier is guilty, and the copy in
@@ -29,7 +32,7 @@ export default function FraudTag({ trail, onOpen }) {
       <button
         type="button"
         onClick={onOpen}
-        title={`Trajectory model flagged ${trail.flaggedFixes} of ${trail.totalFixes} position updates. Open the score trail.`}
+        title={`Trajectory model raised this run (3 flagged updates in a row, or one update at 97% or more). ${trail.flaggedFixes} of ${trail.totalFixes} updates were above threshold. Open the score trail.`}
         aria-label={`Trajectory model flagged this delivery, peak risk ${peak} percent. Open the score trail.`}
         className="status status-cancelled cursor-pointer whitespace-nowrap hover:brightness-125"
       >
@@ -42,7 +45,7 @@ export default function FraudTag({ trail, onOpen }) {
     <button
       type="button"
       onClick={onOpen}
-      title={`Trajectory model scored ${trail.totalFixes} position updates, none above threshold. Open the score trail.`}
+      title={`Trajectory model scored ${trail.totalFixes} position updates and the run alert rule did not fire. Open the score trail.`}
       aria-label={`Trajectory model scored this delivery, peak risk ${peak} percent, no alert. Open the score trail.`}
       className="whitespace-nowrap text-xs text-content-faint tabular hover:text-content-soft"
     >

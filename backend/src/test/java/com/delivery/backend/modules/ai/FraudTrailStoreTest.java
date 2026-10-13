@@ -85,7 +85,8 @@ class FraudTrailStoreTest {
     }
 
     private static TrajectoryFraudService.Verdict verdict(double score, boolean fraud, double threshold) {
-        return new TrajectoryFraudService.Verdict(score, threshold, fraud, false,
+        return new TrajectoryFraudService.Verdict(score, threshold, fraud,
+                /* runFlagged */ false, /* shouldNotify */ false,
                 new double[8], 3.0, 0.0, 1200.0);
     }
 
@@ -120,7 +121,8 @@ class FraudTrailStoreTest {
 
         FraudTrailStore.Summary s = store.trail(spike).summary();
 
-        assertTrue(s.flagged(), "one flagged fix is enough to badge it");
+        assertTrue(s.flagged(),
+                "a single fix this hot (>=0.97) badges via the high-confidence clause");
         assertEquals(1, s.flaggedFixes());
         assertEquals(3, s.totalFixes());
         assertEquals(33, s.flaggedPercent(), "1 of 3 reads as a spike, not a pattern");
@@ -200,5 +202,69 @@ class FraudTrailStoreTest {
         // was checked. The dashboard has to be able to tell blind from clean.
         assertThrows(RuntimeException.class, () -> store.allTrails(),
                 "an unreachable Redis must surface, not masquerade as a clean fleet");
+    }
+
+    // --------------------------------------------------------------- run rule
+    // The badge fires on the runaway rule, not on a single fix. These pin the
+    // three clauses a mutation could break: k consecutive, the high-confidence
+    // single fix, and the fact that the streak must be CONSECUTIVE.
+
+    private static final double BELOW_HIGH = 0.85;   // flagged at 0.82, under 0.97
+    private static final double HIGH = 0.99;         // over 0.97
+    private static final double CLEAN = 0.10;        // under 0.82
+
+    @Test
+    @DisplayName("three flagged fixes in a row badge the run")
+    void threeConsecutiveFlaggedFixesBadgeTheRun() {
+        UUID id = UUID.randomUUID();
+        store.record(id, verdict(CLEAN, false, 0.82));
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+
+        assertTrue(store.trail(id).flagged(),
+                "k=3 consecutive flagged fixes is the whole point of the rule");
+    }
+
+    @Test
+    @DisplayName("two flagged fixes in a row are not yet a run")
+    void twoConsecutiveFlaggedFixesAreNotYetARun() {
+        UUID id = UUID.randomUUID();
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+        store.record(id, verdict(CLEAN, false, 0.82));
+
+        // This is the false positive the run rule exists to remove: a courier
+        // with two hot fixes is not the same finding as a sustained trajectory,
+        // and badging it is what flagged 43% of honest simulated runs.
+        assertFalse(store.trail(id).flagged(),
+                "two flags, neither high-confidence, must not badge");
+    }
+
+    @Test
+    @DisplayName("a broken streak resets the run: three flags apart are not three in a row")
+    void aBrokenStreakResetsTheRun() {
+        UUID id = UUID.randomUUID();
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+        store.record(id, verdict(CLEAN, false, 0.82)); // resets the counter
+        store.record(id, verdict(BELOW_HIGH, true, 0.82));
+
+        assertFalse(store.trail(id).flagged(),
+                "the rule counts consecutive flags, so an interruption must reset it");
+    }
+
+    @Test
+    @DisplayName("a single high-confidence fix badges on its own")
+    void aSingleHighConfidenceFixBadgesOnItsOwn() {
+        UUID id = UUID.randomUUID();
+        store.record(id, verdict(CLEAN, false, 0.82));
+        store.record(id, verdict(HIGH, true, 0.82)); // teleport-like, one fix only
+        store.record(id, verdict(CLEAN, false, 0.82));
+
+        // Without this clause, k=3 alone drops teleport recall to 28% (measured
+        // in ml/measure_or_clause.py): a single jumped fix never accumulates a run.
+        assertTrue(store.trail(id).flagged(),
+                "one fix >= 0.97 satisfies the rule even with no streak around it");
     }
 }

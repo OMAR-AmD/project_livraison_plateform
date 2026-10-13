@@ -2,6 +2,20 @@
 ...
 # SwiftDeliver — Project Report (Overview + Full Feature Set)
 
+## Innovation Vision (S5): the problem the AI solves
+
+The buyer is a Casablanca dispatch desk. Two problems cost them money every day, and neither is solved by hosting, by a Dockerfile, or by JWT:
+
+1. **"Delivered / not delivered" disputes with nothing verifiable to check.** A client says the parcel never came; the courier says it did. The desk picks a side on one person's word.
+2. **Implausible GPS trajectories go unnoticed.** A courier who claims a door from across the city, or who stalls short and then teleports to the target, is not caught by a static threshold: a speed rule catches only ~10% of teleports on the noisy holdout.
+
+The innovation of S5 is the two AI components that resolve these, inside the running product:
+
+- **Trajectory fraud detection** (supervised Random Forest, loaded at startup, scored in-process in Java). It turns raw GPS broadcasts into a per-fix and per-run risk decision, surfaced to the dispatcher as a review badge. It is decision-support only and never punishes automatically. Against the same noisy-holdout set, the model catches **100% of teleports vs ~10% for the speed-rule baseline**, at a **1.1% false-alarm rate** (inside the 2% budget); stall-then-vanish 59.7% vs 10%. The run-level rule (k=3 consecutive flagged fixes, or one fix ≥ 0.97) is shipped in the badge, not just measured offline.
+- **RAG assistant over FAQ + the client's live orders.** It answers questions grounded in the client's own order rows (status, price, payment) and can cancel the client's own order by exact ID — not a scripted FAQ, a retrieval system over unstructured FAQ text plus structured order data.
+
+**Explicitly baseline, not innovation** (software-engineering hygiene expected of any project): containerization, CI/CD, public hosting, JWT + RBAC, secret management, password hashing, input validation, and the refactor of the legacy code. They are necessary; they are not why a client would choose this product. The HMAC delivery proof is a security primitive that makes the fraud verdict *actionable* (a sealed, re-verifiable record), so it supports the innovation story rather than being it.
+
 ## 1. Project Overview
 
 SwiftDeliver is a self-hosted, zero-cost last-mile delivery platform. It was designed to satisfy industrial engineering constraints (Docker, CI, public hosting) while embedding two genuine AI features inside the running product.
@@ -18,7 +32,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 - **CI/CD**: GitHub Actions CI (build/test style checks) with auto-deploy on Render (checksPass).
 - **Public hosting**: Render free tier (frontend + backend + Key Value Redis + managed PostgreSQL considerations).
 - **Authentication**: JWT access tokens, role-based access control (CLIENT/COURIER/ADMIN).
-- **Security hardening**: tokenVersion + logout revocation; login rate-limiting (fixed-window per-account + per-client IP) returning 429 + Retry-After; password hashing (BCrypt-style standard).
+- **Security hardening**: tokenVersion + logout revocation; login rate-limiting (fixed-window per-account + per-client IP) returning 429 + Retry-After; handover-code throttling (per-delivery 5 / per-courier 20 per 15-min window, failures only, success clears the delivery counter) so the six-digit code cannot be brute-forced; password hashing (BCrypt-style standard).
 - **Delivery proofs**: HMAC-sealed delivery confirmations (proof hash, deliveredAt/lat/lng, distance), verifiable by admin; prevents proof transplantation.
 - **Input validation**: server-side validation for booking/quoting/tracking/cancel.
 - **Resilience**: Redis read failures degrade gracefully (no 500); graceful degradation when OSRM absent (manual dispatch vs straight-line). 
@@ -32,7 +46,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 - Quoting: server-side price from OSRM real road route (not straight line).
 - Payment: capture payment before dispatch (unpaid orders never consume courier capacity). Payment is simulated end-to-end (no PSP, no real charge): capture flips PENDING_PAYMENT to PAID, which is what arms auto-dispatch and revenue figures.
 - My deliveries: list/table + mobile cards, statuses (PENDING, ASSIGNED, IN_TRANSIT, ARRIVED, DELIVERED, CANCELLED), payment/rating states, delete delivered/cancelled.
-- Handover code: on active orders a Code button shows a QR + six digits (HMAC-derived per order, owner-only, single-use); the courier scans (camera) or types them to seal delivery where GPS cannot place them within 500 m; the proof records the factor (codeVerified).
+- Handover code: on active orders a Code button shows a QR + six digits (HMAC-derived per order, owner-only, single-use); the courier scans (camera) or types them to seal delivery where GPS cannot place them within 500 m; the proof records the factor (codeVerified). Wrong guesses are throttled (429 + Retry-After).
 - Live tracking: ClientLiveMap shows courier marker updates (polling), stale-position handling ("Signal lost"), scoped to that client's order.
 - Rating: rate delivered orders.
 - Chat widget: RAG assistant (see AI section).
@@ -70,11 +84,11 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 - Type: supervised Random Forest (60 trees). Trained offline in Python on synthetic plausible/impossible trajectories; exported as gzipped JSON.
 - Runtime: loaded at backend startup, scored in-process in Java (no external paid AI calls).
 - Inputs: sequence of GPS fixes for an order (timestamps/lat/lng), derived features (speed, displacement, heading changes, route plausibility signals).
-- Output: per-trajectory risk score; badges in Admin → Fleet monitor: AI alert if above threshold, else AI ok. 
+- Output: per-trajectory risk score; badges in Admin → Fleet monitor: AI alert if the run-level rule fires (k=3 consecutive flagged fixes, or a single fix ≥ 0.97), else AI ok. 
 - Explainability: score curve (per-fix), decision threshold shown, UI states "score is not proof of wrongdoing" and "training data is synthetic".
 - Integration: decision-support only (no automatic punitive action). Surfaces in running product for human review.
 - Noisy-holdout validation (ml/evaluate_noisy.py, ml/noisy_eval_report.json): the SHIPPED forest + threshold scored on real OSRM road geometry with 10 m GPS noise plus an unseen circling pattern — broadcast precision 0.636 / recall 0.443 at 1.10% false alarms (inside the 2% budget); teleport caught 100%, sprint 79.5%, stall-then-vanish 59.7% vs 10% for a speed rule. Known limit found honestly: the unseen circling pattern is nearly blind (0.3%) — the model needs retraining on field data, not just more simulation.
-- Run-level rule (ml/tune_run_rule.py, ml/measure_or_clause.py, ml/audit_k3.py): k=3 consecutive flagged fixes, OR any single fix ≥ 0.97 (threshold tuned on a disjoint seed set) — 29/400 honest runs flagged (7.25%, 95% CI ≈ 5–10%), fraud-run recall 71/98 (72%): teleport 23/25, sprint 23/25, drift-then-vanish 24/25, loop 1/23 (about 25 runs each). `drift-then-vanish` is the `stall-then-vanish` above and `loop` the `circling` pattern (0.3% per-fix, 1/23 per-run — same generator, different units). Toggle rule, pre-committed not statistical: past 3 clause-attributable honest flags per 150 field runs raise the threshold, past 5 drop the clause (evaluated at freeze or 150 runs, whichever first); raising it will cost teleport recall, re-measured not assumed. Until merged, this rule is measured offline, not yet in the badge.
+- Run-level rule (ml/tune_run_rule.py, ml/measure_or_clause.py, ml/audit_k3.py): k=3 consecutive flagged fixes, OR any single fix ≥ 0.97 (threshold tuned on a disjoint seed set) — 29/400 honest runs flagged (7.25%, 95% CI ≈ 5–10%), fraud-run recall 71/98 (72%): teleport 23/25, sprint 23/25, drift-then-vanish 24/25, loop 1/23 (about 25 runs each). `drift-then-vanish` is the `stall-then-vanish` above and `loop` the `circling` pattern (0.3% per-fix, 1/23 per-run — same generator, different units). Toggle rule, pre-committed not statistical: past 3 clause-attributable honest flags per 150 field runs raise the threshold, past 5 drop the clause (evaluated at freeze or 150 runs, whichever first); raising it will cost teleport recall, re-measured not assumed. **Shipped**: the rule now lives in `RunRule` and drives both the live alert (`TrajectoryFraudService`) and the dashboard badge (`FraudTrailStore.flagged()`), so the two cannot drift apart.
 
 ## 5. Technical Details
 
