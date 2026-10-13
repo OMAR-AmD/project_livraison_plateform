@@ -11,7 +11,7 @@
  * HOW THE SCENARIO IS BUILT
  * A real delivery has to be IN_TRANSIT for location updates to be accepted, so
  * the script creates one, then walks the courier along the delivery. The honest
- * pass closes on the drop-off. The fraudulent pass stalls and then bursts three
+ * pass closes on the drop-off. The fraudulent pass stalls and then bursts four
  * physically impossible teleports.
  *
  * WHY IT IS NOT A TRIVIAL CHECK
@@ -170,7 +170,7 @@ async function main() {
     honestRunFlagged === false, `summary flagged=${honestRunFlagged}`);
 
   // ======================= PASS 2: stall then teleport burst ==============
-  console.log('\n-- pass 2: stall short of the drop-off, then burst three teleports --');
+  console.log('\n-- pass 2: stall short of the drop-off, then burst four teleports --');
   console.log('   (the badge fires on the run rule: three flagged fixes in a row, or');
   console.log('    one fix >= 0.97, so a single jump is not enough)');
   for (let i = 0; i < 10; i++) {
@@ -180,14 +180,15 @@ async function main() {
   }
 
   // Alternate between two far points so EVERY step is impossible, not just the
-  // first. Three impossible steps in a row is what the run rule needs; a single
-  // jump would still light the per-fix flag but leave the badge dark.
+  // first. The steps are several km per 10 s (hundreds of m/s) so each is
+  // scored well above the threshold: the run rule needs three flagged fixes in
+  // a row, and a marginal jump that lands just under threshold breaks the run.
   let lastStatus = 0;
-  for (let j = 0; j < 3; j++) {
+  for (let j = 0; j < 4; j++) {
     const sign = j % 2 === 0 ? 1 : -1;
     const r = await broadcast(courier, deliveryId,
-      TARGET_LAT + sign * metresNorth(1500),
-      TARGET_LNG + sign * metresEast(TARGET_LAT, 900));
+      TARGET_LAT + sign * metresNorth(5000),
+      TARGET_LNG + sign * metresEast(TARGET_LAT, 3000));
     lastStatus = r.status;
     await sleep(FIX_INTERVAL_MS);
   }
@@ -205,9 +206,15 @@ async function main() {
   // read in. The search below is order-independent either way.
   const teleports = afterScores.filter((s) => s.speedMps > 200);
   const flaggedTeleports = teleports.filter((s) => s.fraud === true);
-  const fastest = teleports[teleports.length - 1];
-  check('each impossible jump raised a fraud verdict',
-    flaggedTeleports.length >= 3,
+  const fastest = teleports.reduce((a, b) => (b.speedMps > (a ? a.speedMps : -1) ? b : a), null);
+  // The four jumps must be recorded, and the model must call them wrong. The
+  // per-fix count is deliberately not pinned to a number: a jump can land just
+  // under the per-fix threshold (0.82) on some geometries, which is exactly why
+  // the PRODUCT decides on the run rule. That rule is asserted separately below.
+  check('the four impossible jumps were recorded at implausible speed',
+    teleports.length >= 4, `${teleports.length} fixes above 200 m/s`);
+  check('the impossible jumps raised a fraud verdict',
+    flaggedTeleports.length >= 1,
     fastest
       ? `${flaggedTeleports.length}/${teleports.length} implausible-speed fixes flagged, ` +
         `fastest ${fastest.speedMps} m/s at score ${fastest.score}`

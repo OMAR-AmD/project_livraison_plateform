@@ -151,12 +151,14 @@ async function broadcast(headers, id, lat, lng) {
  * turns the burst into a run.
  */
 function teleportPoint(j) {
-  // Alternate north-east / south-west so each consecutive pair is ~3.5 km
-  // apart, i.e. ~350 m/s at the 10 s cadence — impossible at every step.
+  // Alternate north-east / south-west so each consecutive pair is ~5.8 km
+  // apart, i.e. ~580 m/s at the 10 s cadence — impossible at every step, with
+  // enough margin that a jump cannot drift under the per-fix threshold and
+  // break the three-in-a-row run the badge needs.
   const sign = j % 2 === 0 ? 1 : -1;
   return {
-    lat: TARGET_LAT + sign * north(1500),
-    lng: TARGET_LNG + sign * east(TARGET_LAT, 900),
+    lat: TARGET_LAT + sign * north(2500),
+    lng: TARGET_LNG + sign * east(TARGET_LAT, 1500),
   };
 }
 
@@ -190,6 +192,18 @@ async function main() {
   if (!courier1) throw new Error('courier1 not found');
 
   const courier = { headers: courierHeaders, id: courier1.id, admin: adminHeaders };
+
+  // Sweep probes left behind by an interrupted earlier run. They break the row
+  // lookups below in a way that looks like a product bug: a stale PANEL-HONEST
+  // has no trail (the trail TTL is 6 h), so its row carries no tag, and a
+  // description-based locator can match it instead of the fresh one. The rows
+  // are unambiguously this script's own probes, so removing them is safe.
+  const existing = await (await fetch(`${API}/admin/deliveries`, { headers: adminHeaders })).json();
+  const stale = (existing || []).filter((d) => (d.description || '').startsWith('PANEL-'));
+  for (const d of stale) {
+    await fetch(`${API}/admin/deliveries/${d.id}`, { method: 'DELETE', headers: adminHeaders });
+  }
+  if (stale.length) console.log(`  swept ${stale.length} stale probe row(s) from an earlier run`);
 
   const honestId = await createDelivery(client, 'PANEL-HONEST');
   const fraudId = await createDelivery(client, 'PANEL-FRAUD');
@@ -281,13 +295,15 @@ async function main() {
       banner > 0 ? 'an error banner is showing' : 'no outage banner');
 
     // --- state 1: flagged ---------------------------------------------------
-    const flaggedRow = page.locator('tr', { hasText: 'PANEL-FRAUD' }).first();
+    // Located by the id this run created, not by the description: a leftover
+    // probe from an earlier run shares the description and has no live trail.
+    const flaggedRow = page.locator('tr', { hasText: fraudId.slice(0, 8) }).first();
     const flaggedTag = flaggedRow.locator('button', { hasText: /AI alert/ });
     check('the flagged delivery is badged', (await flaggedTag.count()) > 0,
       `${await flaggedTag.count()} tag(s) on the PANEL-FRAUD row`);
 
     // --- state 2: cleared ---------------------------------------------------
-    const honestRow = page.locator('tr', { hasText: 'PANEL-HONEST' }).first();
+    const honestRow = page.locator('tr', { hasText: honestId.slice(0, 8) }).first();
     const honestTag = honestRow.locator('button', { hasText: /AI ok/ });
     const honestAlertTag = honestRow.locator('button', { hasText: /AI alert/ });
     check('the cleared delivery is badged as looked-at, not as never-seen',
@@ -297,7 +313,7 @@ async function main() {
       `${await honestAlertTag.count()} alert tag(s) — the model did flag it`);
 
     // --- state 3: never scored ---------------------------------------------
-    const untouchedRow = page.locator('tr', { hasText: 'PANEL-NEVER-SCORED' }).first();
+    const untouchedRow = page.locator('tr', { hasText: untouchedId.slice(0, 8) }).first();
     const untouchedAny = await untouchedRow.locator('button', { hasText: /^AI / }).count();
     check('a delivery the model never scored carries no tag at all',
       untouchedAny === 0, `${untouchedAny} tag(s); a tag here would claim a measurement nobody made`);
