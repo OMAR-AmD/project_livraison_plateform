@@ -97,7 +97,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 - **Data**: PostgreSQL (relational), pgvector (FAQ embeddings), Redis (live positions, caching/session-related as configured).
 - **Routing**: OSRM (/route/v1/driving) proxied via Next rewrites; graceful if unreachable.
 - **GPS**: client geolocation API, reverse geocoding via Nominatim (with address truncation + coordinate fallback), stable coordKey to avoid double-geocoding.
-- **Testing/Verification**: Playwright-based verification scripts (verify_*.js/.mjs) covering auth hardening, proofs, GPS modes/pickup, real GPS + wake lock, client map, basemap zoom, fraud panel, handover codes, PWA/offline, full rehearsal (15/15). Mutation-aware checks included. `verify_assign_ui` fails its last 2 checks only when live user orders shift dispatch balance onto courier2, making it the "(current)" — correctly non-reselectable per the no-reassign rule; all 8 stacking/behavior checks pass.
+- **Testing/Verification**: Playwright-based verification scripts (verify_*.js/.mjs) covering auth hardening, proofs, GPS modes/pickup, real GPS + wake lock, client map, basemap zoom, fraud panel, handover codes, PWA/offline, full rehearsal (15/15). Mutation-aware checks included. The fraud suites (`verify_fraud_panel.js`, `verify_fraud_live.js`) now also assert the badge's run rule (k=3 consecutive flagged fixes, or a single fix ≥ 0.97) at the fleet summary endpoint the dashboard reads, and `verify_stats.js` asserts an ARRIVED order counts as in-progress and not as completed. `verify_assign_ui` fails its last 2 checks only when live user orders shift dispatch balance onto courier2, making it the "(current)" — correctly non-reselectable per the no-reassign rule; all 8 stacking/behavior checks pass.
 - **CI inventory**: GitHub Actions runs `mvnw package` (backend unit tests: rate limiter, fraud-service parity, fraud store, proof sealing, health) plus the Playwright suites; Render auto-deploys only on green (`checksPass`).
 - **Zero-cost**: no paid APIs/cloud services; all AI local or in-process.
 
@@ -114,6 +114,18 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 - **Wake lock**: best-effort; on some browsers/OS the "Signal lost" badge can still appear if screen locks aggressively (documented).
 - **Fraud model**: trained on synthetic data; explicitly presented as decision-support with disclaimers (not evidentiary proof).
 - **Scaling risks (demo-grade, by design)**: Render free sleeps (~15 min idle, ~60 s wake) and deletes Postgres 30 days after creation; routing and geocoding ride rate-limited public servers (OSRM demo, Nominatim). Fine for a jury demo, not a production plan — each has a named paid/self-hosted replacement.
+
+### Field-retraining plan (the circling blind spot)
+
+The noisy holdout surfaced one real weakness, reported honestly rather than hidden: the unseen **circling/loop** pattern is nearly blind — 0.28% per-fix recall (1 of 354 fixes) and 1 of 23 runs — while teleport is caught 100%, sprint 79.5% and stall-then-vanish 59.7% at the shipped threshold (0.82, 60 trees). The cause is the training data, not the model class: every trajectory is synthetic, and a loop's signature (long path, little net progress) is averaged away by per-step features that were never tuned against a real loop. The pre-committed run-rule toggle (`ml/audit_k3.py`) already bounds the collateral — 7.25% honest-run false alarms — but it cannot recover a pattern the forest cannot see. Closing the gap is a data problem, and this is the plan:
+
+1. **Collect real fixed features, not raw traces.** The platform already records every verdict to Redis under `fraude:score:{deliveryId}` (120-point cap, 6 h TTL) — proof the feature path runs in production, but far too short-lived to train on. Add an opt-in admin export that persists the anonymised feature row per fix (speed, displacement, heading change, stop/burst counts) to Postgres, with the raw coordinate truncated to ~50 m so no customer address is stored. Cadence: the first 200 completed runs or 4 weeks, whichever comes first.
+2. **Label from the workflow that already exists.** Clients, couriers and admins already produce weak labels: "delivered but not received" disputes, client complaints, and the admin's accept/dismiss on the alert badge. Target ≥ 30 confirmed loop-like incidents before trusting a recall figure; below that, report the gap, not a percentage.
+3. **Add the features a loop needs.** Cumulative path efficiency over a sliding window (driven distance ÷ straight-line displacement), net-displacement ratio, and revisit/cluster counts — exactly the signals the current per-step features average away, and cheap to compute in `TrajectoryFraudService` beside the existing ones.
+4. **Retrain behind the same gate, then compare.** Keep the 2% false-alarm budget and the Java↔Python parity test (< 1e-9). Ship a new forest only if loop recall improves without pushing broadcast false alarms past 2%; re-run `ml/evaluate_noisy.py` as the regression gate and record the per-pattern table, as now.
+5. **Keep rollback to one config flip.** The model artifact is a versioned JSON loaded at startup behind `application.ai.*`; keep the previous version on disk so a bad retrain is a one-line revert plus restart, with no redeploy.
+
+Until step 1 yields data, the loop blind spot is stated here and on the alert itself, and the badge stays decision-support: it surfaces a candidate for review, it never accuses a courier on its own.
 
 ## 7. Access & Demo Notes
 

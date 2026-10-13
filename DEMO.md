@@ -178,7 +178,7 @@ nothing to show:
 
 ```bash
 cd frontend
-KEEP=1 node verify_fraud_panel.js     # measured 65.8 s (50 s of it the real 10 s cadence)
+KEEP=1 node verify_fraud_panel.js     # ~75 s (60 s of it the real 10 s cadence: 6 fixes)
 ```
 
 PowerShell: `$env:KEEP=1; node verify_fraud_panel.js`.
@@ -195,14 +195,17 @@ Then, as `admin@swift.com` → **Fleet overview**:
 Clean up after the demo with the **Delete** button on the three `PANEL-*` rows.
 A run without `KEEP=1` cleans up after itself.
 
-Same check standalone: `node verify_fraud_live.js` (runs ~6 min — a ~4 min honest
-pass at the real cadence plus a ~2 min stall-then-vanish pass; it proves the two
-verdicts disagree on one delivery).
+Same check standalone: `node verify_fraud_live.js` (runs ~7 min — a ~4 min honest
+pass at the real cadence plus a ~2.5 min stall-then-teleport pass; it proves the
+two verdicts disagree on one delivery and that only the fraudulent run trips the
+badge's run rule).
 
 Talking point: offline Python Random Forest → gzipped JSON → live Java scoring;
 60 trees, threshold 0.82; Isolation Forest was built, measured and **rejected**.
 At 2 % false-positive rate RF scores 0.78/0.896 vs 0.585/0.358 for the speed
-rule.
+rule. The alert fires on a **run** (k=3 flagged fixes in a row, or one fix
+≥ 0.97), so a single blip does not accuse anyone — the same rule drives the live
+alert and the badge.
 
 ---
 

@@ -11,13 +11,16 @@
  * HOW THE SCENARIO IS BUILT
  * A real delivery has to be IN_TRANSIT for location updates to be accepted, so
  * the script creates one, then walks the courier along the delivery. The honest
- * pass closes on the drop-off. The fraudulent pass stalls and then reports a
- * position from across the city.
+ * pass closes on the drop-off. The fraudulent pass stalls and then bursts three
+ * physically impossible teleports.
  *
  * WHY IT IS NOT A TRIVIAL CHECK
  * It asserts the two verdicts DIFFER on the same delivery, in the same session,
  * under the same model. A detector stuck at 0 fails the fraud assertion; one
- * stuck at 1 fails the honest assertion. Neither can pass by accident.
+ * stuck at 1 fails the honest assertion. Neither can pass by accident. It also
+ * checks the badge's run rule (three flagged fixes in a row, or one fix >= 0.97)
+ * at the summary endpoint the admin panel reads, so a per-fix flag that never
+ * reaches the badge is caught too.
  *
  * RUN
  * node verify_fraud_live.js
@@ -159,20 +162,40 @@ async function main() {
     `${honestFraudCount} of ${honestScores.length} fixes flagged, ` +
       `speeds ${Math.min(...honestSpeeds).toFixed(1)}-${Math.max(...honestSpeeds).toFixed(1)} m/s`);
 
-  // ======================= PASS 2: stall then vanish ======================
-  console.log('\n-- pass 2: stall short of the drop-off, then report arrival from across the city --');
+  // The badge fires on the run rule, not on per-fix flags. After an honest pass
+  // it must stay dark: an implementation that lit up on any single scored fix
+  // would badge every ordinary trip.
+  const honestRunFlagged = await readFlagged(deliveryId);
+  check('the honest run is not flagged by the run rule',
+    honestRunFlagged === false, `summary flagged=${honestRunFlagged}`);
+
+  // ======================= PASS 2: stall then teleport burst ==============
+  console.log('\n-- pass 2: stall short of the drop-off, then burst three teleports --');
+  console.log('   (the badge fires on the run rule: three flagged fixes in a row, or');
+  console.log('    one fix >= 0.97, so a single jump is not enough)');
   for (let i = 0; i < 10; i++) {
     await broadcast(courier, deliveryId,
       TARGET_LAT - metresNorth(2000) + metresNorth(i * 0.5), TARGET_LNG);
     await sleep(FIX_INTERVAL_MS);
   }
-  const vanish = await broadcast(courier, deliveryId,
-    TARGET_LAT + metresNorth(900), TARGET_LNG + metresEast(TARGET_LAT, 700));
 
-  check('the impossible jump was accepted as a position update',
-    vanish.status === 200 || vanish.status === 204, `status ${vanish.status}`);
+  // Alternate between two far points so EVERY step is impossible, not just the
+  // first. Three impossible steps in a row is what the run rule needs; a single
+  // jump would still light the per-fix flag but leave the badge dark.
+  let lastStatus = 0;
+  for (let j = 0; j < 3; j++) {
+    const sign = j % 2 === 0 ? 1 : -1;
+    const r = await broadcast(courier, deliveryId,
+      TARGET_LAT + sign * metresNorth(1500),
+      TARGET_LNG + sign * metresEast(TARGET_LAT, 900));
+    lastStatus = r.status;
+    await sleep(FIX_INTERVAL_MS);
+  }
 
-  // Read the trail AFTER the jump. An earlier version sliced against a
+  check('the impossible jumps were accepted as position updates',
+    lastStatus === 200 || lastStatus === 204, `status ${lastStatus}`);
+
+  // Read the trail AFTER the jumps. An earlier version sliced against a
   // length captured before the write and raced the Redis round-trip, so a
   // verdict that was demonstrably recorded came back as "none flagged".
   await sleep(500);
@@ -180,19 +203,25 @@ async function main() {
 
   // The endpoint returns the trail oldest-first, which is the order a curve is
   // read in. The search below is order-independent either way.
-  const afterJump = afterScores;
-  const jumpScore = afterJump.find((s) => s.speedMps > 200);
-  check('the impossible jump raised a fraud verdict',
-    !!jumpScore && jumpScore.fraud === true,
-    jumpScore
-      ? `speed ${jumpScore.speedMps} m/s, score ${jumpScore.score}, flagged=${jumpScore.fraud}`
+  const teleports = afterScores.filter((s) => s.speedMps > 200);
+  const flaggedTeleports = teleports.filter((s) => s.fraud === true);
+  const fastest = teleports[teleports.length - 1];
+  check('each impossible jump raised a fraud verdict',
+    flaggedTeleports.length >= 3,
+    fastest
+      ? `${flaggedTeleports.length}/${teleports.length} implausible-speed fixes flagged, ` +
+        `fastest ${fastest.speedMps} m/s at score ${fastest.score}`
       : `no fix with an implausible speed among ${afterScores.length} recorded`);
 
-  const newFraud = jumpScore ? [jumpScore] : [];
-
   check('the two passes on the same delivery disagree',
-    honestFraudCount === 0 && newFraud.length > 0,
+    honestFraudCount === 0 && flaggedTeleports.length > 0,
     'honest clean, fraudulent flagged');
+
+  // The badge the admin panel shows does not fire on a single fix; it fires on
+  // the run rule. Assert the summary endpoint the panel badges rows from agrees.
+  const fraudRunFlagged = await readFlagged(deliveryId);
+  check('the teleport burst is flagged by the run rule',
+    fraudRunFlagged === true, `summary flagged=${fraudRunFlagged}`);
 
   // ======================= cleanup ========================================
   // The probe order is deleted so repeated runs do not litter the demo data the
@@ -248,6 +277,19 @@ async function readScores(deliveryId) {
     throw new Error(`could not read the fraud trail: HTTP ${r.status}`);
   }
   return (await r.json()).points;
+}
+
+/** Read the run-rule verdict for one delivery from the fleet summary endpoint —
+ *  the same summary the admin panel badges rows from. Returns the `flagged`
+ *  boolean, or null if the summary is absent (which is itself a failure the
+ *  callers treat as such). */
+async function readFlagged(deliveryId) {
+  const admin = await auth('admin@swift.com');
+  const r = await fetch(`${BASE}/admin/deliveries/fraud-trails`, { headers: admin });
+  if (!r.ok) throw new Error(`could not read fraud summaries: HTTP ${r.status}`);
+  const list = await r.json();
+  const s = list.find((x) => x.deliveryId === deliveryId);
+  return s ? s.flagged : null;
 }
 
 main().catch((e) => {

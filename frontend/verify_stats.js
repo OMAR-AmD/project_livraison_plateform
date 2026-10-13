@@ -96,6 +96,31 @@ async function apiAdminRow(email) {
   return users.find((u) => u.email === email) || null;
 }
 
+/** A bearer token for one account. */
+async function tokenFor(email) {
+  const login = await fetch(`${API}/api/v1/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'password123' }),
+  });
+  const { token } = await login.json();
+  return token;
+}
+
+/** Minimal JSON call for the ARRIVED probe below. Throws on any non-2xx so a
+ *  broken setup fails loudly instead of asserting against stale numbers. */
+async function apiJson(path, method, token, body) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} on ${method} ${path}: ${(await res.text()).slice(0, 160)}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
 /**
  * Read the courier stats strip as a label -> value map.
  *
@@ -132,6 +157,43 @@ async function readStats(page) {
   page.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 140)));
 
   try {
+    // ---- an ARRIVED order must count as "in progress" ----------------------
+    // A courier at the door is still carrying the parcel. Before this fix an
+    // ARRIVED order appeared in NEITHER the in-progress NOR the completed
+    // counter, so it vanished from both during the handover. Drive one probe
+    // order to ARRIVED for courier2 and assert the panel's definition counts it
+    // as active and not as completed. The probe is deleted either way, so a
+    // failure here cannot leave litter in the demo data.
+    const beforeArrived = await apiStats('courier2@swift.com');
+    const probe = await apiJson('/api/v1/client/deliveries', 'POST',
+      await tokenFor('client1@swift.com'), {
+        description: 'ARRIVED-ACTIVE-PROBE',
+        pickupAddress: 'probe pickup', pickupLat: 33.5891, pickupLng: -7.6311,
+        dropoffAddress: 'probe dropoff', dropoffLat: 33.593, dropoffLng: -7.622,
+      });
+    try {
+      const courier2Id = (await apiAdminRow('courier2@swift.com')).id;
+      await apiJson(`/api/v1/admin/deliveries/${probe.id}/assign`, 'PATCH',
+        await tokenFor('admin@swift.com'), { courierId: courier2Id });
+      await apiJson(`/api/v1/courier/deliveries/${probe.id}/status`, 'PATCH',
+        await tokenFor('courier2@swift.com'), { status: 'IN_TRANSIT' });
+      await apiJson(`/api/v1/courier/deliveries/${probe.id}/status`, 'PATCH',
+        await tokenFor('courier2@swift.com'), { status: 'ARRIVED' });
+
+      const duringArrived = await apiStats('courier2@swift.com');
+      ok('an ARRIVED order counts as in progress on the backend',
+        duringArrived.activeDeliveries === beforeArrived.activeDeliveries + 1,
+        `active ${beforeArrived.activeDeliveries} -> ${duringArrived.activeDeliveries}`);
+      ok('an ARRIVED order is not counted as completed',
+        duringArrived.completedDeliveries === beforeArrived.completedDeliveries,
+        `completed ${beforeArrived.completedDeliveries} -> ${duringArrived.completedDeliveries}`);
+    } finally {
+      try {
+        await apiJson(`/api/v1/admin/deliveries/${probe.id}`, 'DELETE',
+          await tokenFor('admin@swift.com'));
+      } catch { /* cleanup is best-effort; the assertions above already ran */ }
+    }
+
     // ---- courier1: has a real track record ----
     const api1 = await apiStats('courier1@swift.com');
     const admin1 = await apiAdminRow('courier1@swift.com');

@@ -23,10 +23,12 @@
  *
  * WHY IT DRIVES REAL TRAJECTORIES
  * The badges are not seeded into Redis. Two deliveries are driven through the
- * courier API at the real 10 s cadence — one honestly, one with a physically
- * impossible jump — and the panel is read afterwards. Nothing about the
- * expected outcome is injected, so a broken wiring between DeliveryService,
- * FraudTrailStore and the endpoint fails here rather than passing.
+ * courier API at the real 10 s cadence — one honestly, one with a burst of
+ * physically impossible jumps long enough to satisfy the run rule (k=3 flagged
+ * fixes in a row, or a single fix >= 0.97) — and the panel is read afterwards.
+ * Nothing about the expected outcome is injected, so a broken wiring between
+ * DeliveryService, FraudTrailStore and the endpoint fails here rather than
+ * passing.
  *
  * RUN
  * node verify_fraud_panel.js
@@ -39,6 +41,11 @@ const API = 'http://localhost:8080/api/v1';
 const PASSWORD = 'password123';
 
 const FIX_INTERVAL_MS = 10000;
+// Six fixes per run: two honest drift fixes, then a four-fix teleport burst.
+// The badge fires on a RUN of flagged fixes (k=3), so the fraudulent pass has to
+// produce at least three in a row, not a single jump.
+const FIX_COUNT = 6;
+const DRIFT_FIXES = 2;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The probe deliveries are deleted by default: a verification run must not
@@ -70,6 +77,23 @@ const east = (lat, m) => m / (111320 * Math.cos((lat * Math.PI) / 180));
 
 const TARGET_LAT = 33.5891;
 const TARGET_LNG = -7.6311;
+
+/**
+ * The shipped run rule, re-stated here so the test asserts on the same
+ * definition the backend uses (RunRule.java, ml/measure_or_clause.py):
+ * three fraud flags in a row, or any single fix scoring 0.97 or more.
+ *
+ * The badge does NOT fire on a single flagged fix — that was the 43%-false-alarm
+ * behaviour the rule removed — so the trajectory below has to earn a run.
+ */
+function runFlagged(points) {
+  let run = 0;
+  for (const p of points) {
+    run = p.fraud ? run + 1 : 0;
+    if (run >= 3 || p.score >= 0.97) return true;
+  }
+  return false;
+}
 
 async function createDelivery(client, description) {
   const r = await fetch(`${API}/client/deliveries`, {
@@ -119,20 +143,35 @@ async function broadcast(headers, id, lat, lng) {
  * share the same wall clock. Running them in sequence would double the wait for
  * no extra evidence: what is being compared is the model's verdict on two
  * trajectories, not their order.
+ *
+ * The fraudulent pass ends in a BURST of teleports, not a single jump. The
+ * badge fires on the run rule (k=3 consecutive flagged fixes, or one fix
+ * >= 0.97), so a lone jump is one flagged fix and would leave the badge dark.
+ * Alternating between two far points keeps every step impossible, which is what
+ * turns the burst into a run.
  */
+function teleportPoint(j) {
+  // Alternate north-east / south-west so each consecutive pair is ~3.5 km
+  // apart, i.e. ~350 m/s at the 10 s cadence — impossible at every step.
+  const sign = j % 2 === 0 ? 1 : -1;
+  return {
+    lat: TARGET_LAT + sign * north(1500),
+    lng: TARGET_LNG + sign * east(TARGET_LAT, 900),
+  };
+}
+
 async function driveScenarios(courier, honestId, fraudId, fixCount) {
   for (let i = 0; i < fixCount; i++) {
     // Closing on the drop-off at ~3 m/s, which is a normal urban courier pace.
     const remaining = 600 - i * (600 / fixCount);
     await broadcast(courier.headers, honestId, TARGET_LAT - north(remaining), TARGET_LNG);
 
-    // The courier drifts a few metres, then reports arrival from 1.5 km away.
     // Same courier, same target, same cadence: only the trajectory differs.
-    if (i < fixCount - 2) {
+    if (i < DRIFT_FIXES) {
       await broadcast(courier.headers, fraudId, TARGET_LAT - north(400) + north(i * 3), TARGET_LNG);
     } else {
-      await broadcast(courier.headers, fraudId,
-        TARGET_LAT + north(1500), TARGET_LNG + east(TARGET_LAT, 900));
+      const p = teleportPoint(i - DRIFT_FIXES);
+      await broadcast(courier.headers, fraudId, p.lat, p.lng);
     }
     await sleep(FIX_INTERVAL_MS);
   }
@@ -163,8 +202,8 @@ async function main() {
     // untouchedId is deliberately left PENDING and unassigned. It is the third
     // state: a delivery the model has no opinion about.
 
-    console.log(`\n-- driving ${5} fixes each at a real ${FIX_INTERVAL_MS / 1000}s cadence --`);
-    await driveScenarios(courier, honestId, fraudId, 5);
+    console.log(`\n-- driving ${FIX_COUNT} fixes each at a real ${FIX_INTERVAL_MS / 1000}s cadence --`);
+    await driveScenarios(courier, honestId, fraudId, FIX_COUNT);
 
     // Confirm the premise before reading the UI. If neither scenario produced
     // the verdict this check expects, a missing badge is a test problem and not
@@ -187,6 +226,25 @@ async function main() {
       console.log('\n  premise failed: no trail was recorded, so the dashboard has nothing to show.');
       return;
     }
+
+    // --- the run rule, as the badge applies it ------------------------------
+    // The per-fix flags above are the raw material; the badge fires on the run
+    // rule. Assert it twice: once by re-deriving it from the points, and once
+    // at the API the dashboard actually reads. A badge that fires on a single
+    // fix (the old behaviour) or never fires fails here, not just in the UI.
+    const summaries = await (await fetch(`${API}/admin/deliveries/fraud-trails`, { headers: adminHeaders })).json();
+    const summaryOf = (id) => summaries.find((s) => s.deliveryId === id) || null;
+    const honestSummary = summaryOf(honestId);
+    const fraudSummary = summaryOf(fraudId);
+
+    check('the run rule does not flag the honest trajectory',
+      runFlagged(honestPoints) === false, `honest runFlagged=${runFlagged(honestPoints)}`);
+    check('the run rule flags the fraudulent teleport burst',
+      runFlagged(fraudPoints) === true, `fraud runFlagged=${runFlagged(fraudPoints)}`);
+    check('the fleet summary the dashboard reads flags only the fraudulent run',
+      !!fraudSummary && fraudSummary.flagged === true
+        && !!honestSummary && honestSummary.flagged === false,
+      `summary honest=${honestSummary && honestSummary.flagged}, fraud=${fraudSummary && fraudSummary.flagged}`);
 
     // ===================== the dashboard =====================================
     const browser = await chromium.launch();
