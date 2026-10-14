@@ -48,6 +48,7 @@ public class PricingService {
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private final String osrmBaseUrl;
+    private final String fallbackBaseUrl;
 
     public PricingService(
             ObjectMapper objectMapper,
@@ -60,9 +61,11 @@ public class PricingService {
             // container localhost is the container itself, and every quote
             // 503'd. The default is kept so the unit tests can still build
             // this without a property source.
-            @Value("${application.osrm.base-url:http://localhost:5000}") String osrmBaseUrl) {
+            @Value("${application.osrm.base-url:http://localhost:5000}") String osrmBaseUrl,
+            @Value("${application.osrm.fallback-url:https://router.project-osrm.org}") String fallbackBaseUrl) {
         this.objectMapper = objectMapper;
         this.osrmBaseUrl = osrmBaseUrl;
+        this.fallbackBaseUrl = fallbackBaseUrl;
         // Explicit timeouts: without them a stalled OSRM leaves the caller blocked
         // indefinitely, and this call sits on the request path of every new booking.
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
@@ -74,36 +77,41 @@ public class PricingService {
     /**
      * Quotes a delivery from its pickup and dropoff coordinates.
      *
+     * <p>Booking depends on this: {@code createDelivery} prices every order
+     * through here, so a routing engine that is down does not just degrade
+     * dispatch — nobody can book. The quote therefore tries the configured
+     * engine first and the public OSRM demo server second (the same one the
+     * cloud deployment uses), and only then fails honestly. Which engine
+     * answered is logged with the quote, because road distances from two
+     * different map builds can differ slightly and the log should say which
+     * one priced the order. An empty fallback URL disables the second tier.
+     *
      * @throws IllegalArgumentException if any coordinate is missing
-     * @throws IllegalStateException    if OSRM cannot be reached
+     * @throws IllegalStateException    if no routing engine can be reached
      */
     public DeliveryQuoteResponse quote(Double pickupLat, Double pickupLng,
                                       Double dropoffLat, Double dropoffLng) {
         requireCoordinate(pickupLat, pickupLng, "pickup");
         requireCoordinate(dropoffLat, dropoffLng, "dropoff");
 
-        String url = String.format("%s/route/v1/driving/%f,%f;%f,%f?overview=false",
-                osrmBaseUrl, pickupLng, pickupLat, dropoffLng, dropoffLat);
-
         JsonNode route;
+        String answeredBy;
         try {
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-            JsonNode root = objectMapper.readTree(response.getBody());
-            JsonNode routes = root.path("routes");
-            if (!routes.isArray() || routes.isEmpty()) {
-                throw new IllegalStateException("OSRM returned no route between the two locations.");
+            route = fetchRoute(osrmBaseUrl, pickupLat, pickupLng, dropoffLat, dropoffLng);
+            answeredBy = osrmBaseUrl;
+        } catch (Exception primaryFailure) {
+            if (fallbackBaseUrl == null || fallbackBaseUrl.isBlank()
+                    || fallbackBaseUrl.equals(osrmBaseUrl)) {
+                throw honestFailure(pickupLat, pickupLng, dropoffLat, dropoffLng, primaryFailure);
             }
-            route = routes.get(0);
-        } catch (IllegalStateException e) {
-            throw e;
-        } catch (Exception e) {
-            // Deliberately fail rather than silently substituting a straight-line
-            // estimate. Inventing a distance here is exactly what made the previous
-            // pricing untrustworthy, and a wrong quote is worse than a visible failure.
-            log.error("OSRM quote failed for {},{} -> {},{}: {}",
-                    pickupLat, pickupLng, dropoffLat, dropoffLng, e.getMessage());
-            throw new IllegalStateException(
-                    "The routing engine is unavailable, so this delivery cannot be priced right now. Please try again shortly.");
+            log.warn("Primary routing engine {} failed ({}), trying the public fallback.",
+                    osrmBaseUrl, primaryFailure.getMessage());
+            try {
+                route = fetchRoute(fallbackBaseUrl, pickupLat, pickupLng, dropoffLat, dropoffLng);
+                answeredBy = fallbackBaseUrl;
+            } catch (Exception fallbackFailure) {
+                throw honestFailure(pickupLat, pickupLng, dropoffLat, dropoffLng, fallbackFailure);
+            }
         }
 
         double distanceMeters = route.path("distance").asDouble();
@@ -117,6 +125,8 @@ public class PricingService {
         double distanceKm = distanceMeters / 1000.0;
         double price = Math.max(BASE_FARE_MAD, Math.ceil(distanceKm * PER_KM_MAD));
 
+        log.info("Quote {} km priced by {}.", String.format("%.2f", distanceKm), answeredBy);
+
         DeliveryQuoteResponse quote = new DeliveryQuoteResponse();
         quote.setDistanceKm(round2(distanceKm));
         quote.setDurationSeconds(durationSeconds);
@@ -125,6 +135,31 @@ public class PricingService {
         quote.setExceedsTimeLimit(durationSeconds > MAX_TRANSIT_SECONDS);
         quote.setMaxDurationSeconds(MAX_TRANSIT_SECONDS);
         return quote;
+    }
+
+    /** One route request against one engine; any failure belongs to the caller. */
+    private JsonNode fetchRoute(String baseUrl, double pickupLat, double pickupLng,
+                                double dropoffLat, double dropoffLng) throws Exception {
+        String url = String.format("%s/route/v1/driving/%f,%f;%f,%f?overview=false",
+                baseUrl, pickupLng, pickupLat, dropoffLng, dropoffLat);
+        ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+        JsonNode routes = objectMapper.readTree(response.getBody()).path("routes");
+        if (!routes.isArray() || routes.isEmpty()) {
+            throw new IllegalStateException("OSRM returned no route between the two locations.");
+        }
+        return routes.get(0);
+    }
+
+    private IllegalStateException honestFailure(double pickupLat, double pickupLng,
+                                                double dropoffLat, double dropoffLng,
+                                                Exception cause) {
+        // Deliberately fail rather than silently substituting a straight-line
+        // estimate. Inventing a distance here is exactly what made the previous
+        // pricing untrustworthy, and a wrong quote is worse than a visible failure.
+        log.error("OSRM quote failed for {},{} -> {},{}: {}",
+                pickupLat, pickupLng, dropoffLat, dropoffLng, cause.getMessage());
+        return new IllegalStateException(
+                "The routing engine is unavailable, so this delivery cannot be priced right now. Please try again shortly.");
     }
 
     private void requireCoordinate(Double lat, Double lng, String label) {

@@ -220,7 +220,11 @@ jobs:
       - name: The backend image refuses to start without a signing key
         run: |
           set -euo pipefail
-          docker run -d --name ci-nokey swiftdeliver/backend:ci >/dev/null
+          # DB_PASSWORD is provided so that the missing JWT key is what kills
+          # the boot: this step asserts the container dies naming the signing
+          # key, and a second missing variable would steal that failure.
+          docker run -d --name ci-nokey -e DB_PASSWORD=ci-placeholder-password-not-used \
+            swiftdeliver/backend:ci >/dev/null
           trap 'docker rm -f ci-nokey >/dev/null 2>&1 || true' EXIT
 
           for i in $(seq 1 30); do
@@ -273,6 +277,7 @@ jobs:
           docker run -d --name ci-redis --network ci-net redis:7 >/dev/null
           docker run -d --name ci-backend --network ci-net \
             -e JWT_SECRET_KEY=ci-placeholder-key-not-used-for-a-real-deployment \
+            -e DB_PASSWORD=password123 \
             -e DB_HOST=ci-db -e REDIS_HOST=ci-redis \
             swiftdeliver/backend:ci >/dev/null
           trap 'docker rm -f ci-backend ci-db ci-redis >/dev/null 2>&1; docker network rm ci-net >/dev/null 2>&1 || true' EXIT

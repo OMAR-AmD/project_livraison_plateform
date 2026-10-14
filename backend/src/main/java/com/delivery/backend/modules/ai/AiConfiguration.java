@@ -2,6 +2,7 @@ package com.delivery.backend.modules.ai;
 
 import com.delivery.backend.modules.auth.User;
 import com.delivery.backend.modules.delivery.DeliveryService;
+import com.delivery.backend.modules.delivery.DeliveryStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -18,48 +19,124 @@ public class AiConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(AiConfiguration.class);
 
-    public record CancelDeliveryRequest(String deliveryId) {}
-    public record CancelDeliveryResponse(String status, String message) {}
+    public record ProposeCancellationRequest(String deliveryId) {}
+    public record ProposeCancellationResponse(String status, String message) {}
+    public record ConfirmCancellationRequest(String deliveryId) {}
+    public record ConfirmCancellationResponse(String status, String message) {}
 
+    /**
+     * Step one of cancelling: records the intent, changes nothing.
+     *
+     * <p>The model proved it will cancel an order the customer never named, so
+     * "the model asked, therefore the customer agreed" is not a premise this
+     * codebase accepts. The intent is stored per client and only an explicit
+     * confirmation of the same order executes it (see
+     * {@code confirmCancellationFunction}). Ownership and PENDING-only are
+     * checked here for a good error message, and again at execution against
+     * the order as it stands then.
+     */
     @Bean
-    @Description("Annuler une commande de livraison en utilisant son ID (UUID).")
-    public Function<CancelDeliveryRequest, CancelDeliveryResponse> cancelDeliveryFunction(DeliveryService deliveryService) {
+    @Description("Propose cancelling one of the customer's own PENDING deliveries by its ID (UUID). This records the intent and changes nothing: the customer must then explicitly confirm that exact order before anything happens.")
+    public Function<ProposeCancellationRequest, ProposeCancellationResponse> proposeCancellationFunction(
+            DeliveryService deliveryService, CancelProposalStore proposals) {
         return request -> {
             // Resolve WHO is asking. The model must never be trusted to decide this:
-            // it only supplies an ID, and a 1B model will happily echo back an ID it
+            // it only supplies an ID, and a small model will happily echo back an ID it
             // invented or one belonging to somebody else. Every authorisation
             // decision is therefore made here, from the authenticated principal.
             // /api/v1/client/** already requires the CLIENT role, so a missing or
             // non-User principal means the request did not come from a real client.
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null || !(auth.getPrincipal() instanceof User client)) {
-                log.warn("Rejected cancelDelivery tool call from an unauthenticated principal");
-                return new CancelDeliveryResponse("ERROR", "Action refusée : utilisateur non authentifié.");
+                log.warn("Rejected proposeCancellation tool call from an unauthenticated principal");
+                return new ProposeCancellationResponse("ERROR", "Action refusée : utilisateur non authentifié.");
             }
 
             String rawId = request.deliveryId();
             if (rawId == null || rawId.isBlank()) {
-                return new CancelDeliveryResponse("ERROR", "Aucun identifiant de commande n'a été fourni.");
+                return new ProposeCancellationResponse("ERROR", "Aucun identifiant de commande n'a été fourni.");
             }
 
             try {
                 UUID id = UUID.fromString(rawId.trim());
+                var order = deliveryService.getDeliveryForClient(id, client);
+                if (order.getStatus() != DeliveryStatus.PENDING) {
+                    return new ProposeCancellationResponse("ERROR",
+                            "Seule une commande en attente (PENDING) peut être annulée.");
+                }
+                proposals.propose(client.getId(), id);
+                return new ProposeCancellationResponse("PROPOSED",
+                        "Intention enregistrée pour la commande " + id + ". Demandez au client "
+                                + "de confirmer explicitement cette commande précise avant d'appeler "
+                                + "la confirmation.");
+            } catch (IllegalArgumentException e) {
+                // Unknown ID or someone else's order (both read as "not found", so a
+                // guessed ID cannot probe whether an order exists). Surfaced verbatim
+                // so the assistant can explain instead of answering a bare "ERROR".
+                return new ProposeCancellationResponse("ERROR", "Annulation impossible : " + e.getMessage());
+            } catch (Exception e) {
+                log.error("proposeCancellation tool call failed", e);
+                return new ProposeCancellationResponse("ERROR",
+                        "Impossible de proposer l'annulation. L'ID est peut-être invalide.");
+            }
+        };
+    }
+
+    /**
+     * Step two of cancelling: executes only a live, matching proposal.
+     *
+     * <p>Calling this with no proposal — the model skipping the question — or
+     * with a different ID than proposed is refused, and the store is built so
+     * that refusal path mutates nothing. A blank ID confirms whatever is
+     * pending: the chat API is stateless, so a bare "yes" carries no order ID,
+     * and there is at most one proposal per client. {@code cancelDelivery}
+     * re-verifies ownership and PENDING-only at execution, so an order
+     * delivered between the proposal and the "yes" is refused rather than
+     * cancelled late.
+     */
+    @Bean
+    @Description("Execute a previously proposed cancellation. Call only after the customer explicitly confirmed; with no ID it confirms their pending proposal, with an ID that ID must match the proposal. Without a matching live proposal this refuses.")
+    public Function<ConfirmCancellationRequest, ConfirmCancellationResponse> confirmCancellationFunction(
+            DeliveryService deliveryService, CancelProposalStore proposals) {
+        return request -> {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !(auth.getPrincipal() instanceof User client)) {
+                log.warn("Rejected confirmCancellation tool call from an unauthenticated principal");
+                return new ConfirmCancellationResponse("ERROR", "Action refusée : utilisateur non authentifié.");
+            }
+
+            String rawId = request.deliveryId();
+            try {
+                final UUID confirmed;
+                if (rawId == null || rawId.isBlank()) {
+                    confirmed = proposals.consumePending(client.getId()).orElse(null);
+                    if (confirmed == null) {
+                        return new ConfirmCancellationResponse("ERROR",
+                                "Aucune annulation en attente : proposez d'abord, "
+                                        + "faites confirmer le client, puis confirmez.");
+                    }
+                } else {
+                    UUID id = UUID.fromString(rawId.trim());
+                    if (proposals.consume(client.getId(), id).isEmpty()) {
+                        return new ConfirmCancellationResponse("ERROR",
+                                "Aucune annulation en attente pour cette commande : proposez d'abord, "
+                                        + "faites confirmer le client, puis confirmez.");
+                    }
+                    confirmed = id;
+                }
                 // cancelDelivery() — deliberately NOT deleteDelivery().
                 // cancelDelivery() verifies the delivery belongs to this client and
                 // only allows cancelling while PENDING. deleteDelivery() hard-deletes
                 // the row and performs no ownership check whatsoever, so calling it
                 // from a language model meant any client could destroy any delivery.
-                deliveryService.cancelDelivery(id, client);
-                return new CancelDeliveryResponse("SUCCESS",
-                        "La commande " + id + " a été annulée avec succès.");
+                deliveryService.cancelDelivery(confirmed, client);
+                return new ConfirmCancellationResponse("SUCCESS",
+                        "La commande " + confirmed + " a été annulée avec succès.");
             } catch (IllegalArgumentException e) {
-                // Domain rejections: unknown ID, not the owner, or not PENDING.
-                // Surfaced verbatim so the assistant can explain what went wrong
-                // instead of answering a bare "ERROR" to the user.
-                return new CancelDeliveryResponse("ERROR", "Annulation impossible : " + e.getMessage());
+                return new ConfirmCancellationResponse("ERROR", "Annulation impossible : " + e.getMessage());
             } catch (Exception e) {
-                log.error("cancelDelivery tool call failed", e);
-                return new CancelDeliveryResponse("ERROR",
+                log.error("confirmCancellation tool call failed", e);
+                return new ConfirmCancellationResponse("ERROR",
                         "Impossible d'annuler la commande. L'ID est peut-être invalide ou la commande est déjà traitée.");
             }
         };

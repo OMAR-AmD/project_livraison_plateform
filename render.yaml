@@ -140,11 +140,21 @@ services:
         generateValue: true
       - key: OSRM_BASE_URL
         value: https://router.project-osrm.org
-      # Seeds the demo accounts (admin@swift.com / password123 and friends) so
-      # the deployed instance is demoable the moment it finishes booting. On a
-      # database that already has data this is a no-op.
+      # Seeds the demo accounts so the deployed instance is demoable the moment
+      # it finishes booting. On a database that already has data the deliveries
+      # are a no-op, but the six demo accounts are managed: every boot ensures
+      # they exist with the DEMO_PASSWORD below, so the password shown here is
+      # always the password that works.
       - key: SPRING_PROFILES_ACTIVE
         value: demo
+      # Per-deployment demo password, generated once by Render and never
+      # committed. This is what the seeded admin@swift.com signs in with on the
+      # public site — find the value in the dashboard (backend service →
+      # Environment → DEMO_PASSWORD). Local runs leave it unset and fall back
+      # to the documented password123, which is why the local demo accounts
+      # stay convenient while the public ones are not publicly known.
+      - key: DEMO_PASSWORD
+        generateValue: true
 
   # ---------------------------------------------------------------- frontend
   - type: web

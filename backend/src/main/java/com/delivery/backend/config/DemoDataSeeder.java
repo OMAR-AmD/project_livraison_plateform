@@ -17,7 +17,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * Populates the platform with realistic demo data.
@@ -31,8 +30,16 @@ import java.util.List;
  * {@code BackendApplication} that created three placeholder accounts on
  * <em>every</em> boot, printed a hard-coded administrator password to stdout, and
  * could not be switched off. A seeder that always runs and cannot be disabled is
- * a foot-gun, so this one is opt-in and refuses to write to a database that is
- * not already empty.
+ * a foot-gun, so this one is opt-in and seeds deliveries only into an empty
+ * database.
+ *
+ * <p>The six demo accounts are <em>managed</em>: every boot ensures they exist
+ * with the {@code DEMO_PASSWORD} password, creating or re-syncing as needed.
+ * That way the password shown in the Render dashboard is always the password
+ * that works — regenerating it can never lock the demo out. Locally the
+ * variable is usually unset and the documented {@code password123} fallback
+ * applies; those accounts hold demo data only and are public by design. The
+ * fallback value is never logged.
  *
  * <p>All prices are written directly rather than quoted, because seeding does not
  * go through the OSRM round trip. Coordinates are real Casablanca addresses so
@@ -43,8 +50,6 @@ import java.util.List;
 public class DemoDataSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);
-
-    private static final String PASSWORD = "password123";
 
     /** Casablanca addresses, roughly north-west to south-east. */
     private static final double[][] PLACES = {
@@ -64,34 +69,37 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
     private final PasswordEncoder passwordEncoder;
+    private final String demoPassword;
 
     public DemoDataSeeder(UserRepository userRepository,
                           DeliveryRepository deliveryRepository,
-                          PasswordEncoder passwordEncoder) {
+                          PasswordEncoder passwordEncoder,
+                          @org.springframework.beans.factory.annotation.Value("${DEMO_PASSWORD:password123}") String demoPassword) {
         this.userRepository = userRepository;
         this.deliveryRepository = deliveryRepository;
         this.passwordEncoder = passwordEncoder;
+        this.demoPassword = demoPassword;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (userRepository.count() > 0) {
-            log.info("Demo seeder skipped: the database already contains {} user(s).",
-                    userRepository.count());
+        // Demo accounts are managed, not just seeded: whatever is in
+        // DEMO_PASSWORD now is what works now, including after a regenerate.
+        User admin = ensureDemoUser("admin@swift.com", "Amina", "Berrada", Role.ADMIN);
+        User courier1 = ensureDemoUser("courier1@swift.com", "Youssef", "Alaoui", Role.LIVREUR);
+        User courier2 = ensureDemoUser("courier2@swift.com", "Karim", "Naciri", Role.LIVREUR);
+        User client1 = ensureDemoUser("client1@swift.com", "Sara", "El Mansouri", Role.CLIENT);
+        User client2 = ensureDemoUser("client2@swift.com", "Omar", "Tazi", Role.CLIENT);
+        User client3 = ensureDemoUser("client3@swift.com", "Lina", "Chraibi", Role.CLIENT);
+
+        if (deliveryRepository.count() > 0) {
+            log.info("Demo seeder skipped deliveries: the database already contains {}.",
+                    deliveryRepository.count());
             return;
         }
 
-        log.info("Seeding demo data...");
-
-        User admin = user("admin@swift.com", "Amina", "Berrada", Role.ADMIN);
-        User courier1 = user("courier1@swift.com", "Youssef", "Alaoui", Role.LIVREUR);
-        User courier2 = user("courier2@swift.com", "Karim", "Naciri", Role.LIVREUR);
-        User client1 = user("client1@swift.com", "Sara", "El Mansouri", Role.CLIENT);
-        User client2 = user("client2@swift.com", "Omar", "Tazi", Role.CLIENT);
-        User client3 = user("client3@swift.com", "Lina", "Chraibi", Role.CLIENT);
-
-        userRepository.saveAll(List.of(admin, courier1, courier2, client1, client2, client3));
+        log.info("Seeding demo deliveries...");
 
         // Spread the round across both couriers so the admin fleet map and the
         // auto-dispatcher both have something realistic to work with.
@@ -107,19 +115,41 @@ public class DemoDataSeeder implements ApplicationRunner {
         log.info("""
 
                 ================================================================
-                 Demo data seeded (profile: demo). All passwords: {}
+                 Demo data seeded (profile: demo). Accounts and deliveries ready:
                    admin@swift.com      ADMIN
                    courier1@swift.com    LIVREUR
                    courier2@swift.com    LIVREUR
                    client1@swift.com     CLIENT
                    client2@swift.com     CLIENT
                    client3@swift.com     CLIENT
+                 Password: the DEMO_PASSWORD value (default password123).
                 ================================================================
-                """, PASSWORD);
+                """);
+    }
+
+    /**
+     * Creates the demo account if missing, or re-syncs its password when the
+     * stored hash no longer matches the current {@code DEMO_PASSWORD}. Someone
+     * who changed a demo password on purpose and reboots gets it managed back;
+     * that is the documented price of a demo account, and self-registered
+     * accounts are never touched.
+     */
+    private User ensureDemoUser(String email, String first, String last, Role role) {
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null) {
+            if (!passwordEncoder.matches(demoPassword, existing.getPassword())) {
+                existing.setPassword(passwordEncoder.encode(demoPassword));
+                log.info("Demo account {} password re-synced to the current DEMO_PASSWORD.", email);
+            }
+            return existing;
+        }
+        User created = user(email, first, last, role);
+        userRepository.save(created);
+        return created;
     }
 
     private User user(String email, String first, String last, Role role) {
-        User u = new User(email, passwordEncoder.encode(PASSWORD), role);
+        User u = new User(email, passwordEncoder.encode(demoPassword), role);
         u.setFirstName(first);
         u.setLastName(last);
         u.setPhoneNumber("+212 6 00 00 00 00");

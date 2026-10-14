@@ -232,9 +232,24 @@ public class ChatService {
                    answer "where is my courier" and "how fast" questions with
                    numbers. If the telemetry fields are null, say the position
                    is not fresh instead of inventing one.
-                4. If the customer asks to cancel an order, call the 'cancelDeliveryFunction' tool with the ID of
-                   one of THEIR OWN orders. The tool refuses anything else - do not retry with a different ID.
-                5. 'deliveryDetailsFunction' and 'cancelDeliveryFunction' are the ONLY
+                4. Cancelling takes TWO tool calls, always in this order, with an
+                   explicit "yes" from the customer in between: first call
+                   'proposeCancellationFunction' with the ID of one of THEIR OWN
+                   PENDING orders, then tell the customer exactly which order is
+                   about to be cancelled and ask them to confirm it. A bare
+                   confirmation afterwards ("oui", "yes", "je confirme", "vas-y",
+                   "d'accord") IS the trigger: call 'confirmCancellationFunction'
+                   with no arguments at once — it confirms their pending
+                   proposal. (If you state an ID, it must be the SAME id.)
+                   Never call confirm without a prior propose in this
+                   conversation, never confirm a different id than the one
+                   proposed, and never cancel on a status question or an
+                   ambiguous "it" — ask which order first. Do not explain the
+                   two steps and do not ask twice: the customer already said
+                   yes. The tools refuse anything else - do not retry with a
+                   different ID.
+                5. 'deliveryDetailsFunction', 'proposeCancellationFunction' and
+                   'confirmCancellationFunction' are the ONLY
                    functions that exist. Never invent another function name, never
                    output JSON or a function call as text, and never narrate what you
                    are doing ("I will call...", "Since the question...") - just give
@@ -248,7 +263,8 @@ public class ChatService {
             return chatClient.prompt()
                     .system(systemMessage)
                     .user(question)
-                    .functions("cancelDeliveryFunction", "deliveryDetailsFunction")
+                    .functions("proposeCancellationFunction", "confirmCancellationFunction",
+                            "deliveryDetailsFunction")
                     .call()
                     .content();
         } catch (Exception e) {
