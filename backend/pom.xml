@@ -154,6 +154,51 @@
 					</environmentVariables>
 				</configuration>
 			</plugin>
+			<!--
+				Mutation testing, wired but kept out of `mvn test`: it is minutes,
+				not seconds, so it runs on demand with `./mvnw pitest:mutationCoverage`.
+				It targets the throttle classes specifically because that is where a
+				surviving mutant is a security hole: a flipped `>=`, a dropped
+				EXPIRE, or a skipped clear would each weaken the brute-force defence
+				while the ordinary tests stayed green.
+
+				PIT needs the JUnit 5 driver as a plugin dependency. Without it the
+				JUnit Platform tests are invisible to PIT and every mutant "survives"
+				for want of anything to kill it, which is the opposite of reassuring.
+			-->
+			<plugin>
+				<groupId>org.pitest</groupId>
+				<artifactId>pitest-maven</artifactId>
+				<version>1.15.8</version>
+				<dependencies>
+					<dependency>
+						<groupId>org.pitest</groupId>
+						<artifactId>pitest-junit5-plugin</artifactId>
+						<version>1.2.1</version>
+					</dependency>
+				</dependencies>
+				<configuration>
+					<targetClasses>
+						<param>com.delivery.backend.modules.delivery.HandoverCodeRateLimiter</param>
+						<param>com.delivery.backend.modules.delivery.RedisHandoverAttemptStore</param>
+						<param>com.delivery.backend.modules.delivery.InMemoryHandoverAttemptStore</param>
+					</targetClasses>
+					<targetTests>
+						<param>com.delivery.backend.modules.delivery.HandoverCodeRateLimiterTest</param>
+						<param>com.delivery.backend.modules.delivery.HandoverCodeRateLimiterFailClosedTest</param>
+						<param>com.delivery.backend.modules.delivery.HandoverCodeThrottleTest</param>
+						<param>com.delivery.backend.modules.delivery.RedisHandoverAttemptStoreTest</param>
+						<param>com.delivery.backend.modules.delivery.InMemoryHandoverAttemptStoreTest</param>
+						<param>com.delivery.backend.modules.delivery.HandoverThrottleRedisIntegrationTest</param>
+					</targetTests>
+					<outputFormats>
+						<param>HTML</param>
+						<param>XML</param>
+					</outputFormats>
+					<timestampedReports>false</timestampedReports>
+					<threads>4</threads>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 

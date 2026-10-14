@@ -8,8 +8,6 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Throttles guesses at a delivery's 6-digit handover code.
@@ -38,83 +36,122 @@ import java.util.concurrent.atomic.AtomicLong;
  * once and then right lock themselves out of their next order, and the door is
  * exactly where a mistyped digit is expected.
  *
- * <p><b>State is in memory, on purpose.</b> Same trade-off as
- * {@link com.delivery.backend.modules.auth.LoginRateLimiter}: a Redis-backed
- * limiter stops working the moment Redis does, which is the wrong failure
- * direction for a security control. The cost is that counters reset on restart
- * and are per instance; moving to a shared store is a deliberate step for when
- * the platform runs more than one.
+ * <p><b>The counters live in a {@link HandoverAttemptStore}, not in this
+ * class.</b> The policy above is a pure decision; the storage is the part that
+ * has to be shared. Splitting them lets this class be tested against a clock and
+ * a map, while the deployed platform uses the Redis store so that two instances
+ * give a guesser one budget instead of one each.
+ *
+ * <p>When the store cannot be reached the throttle <b>fails closed</b>: it
+ * refuses the attempt and records why. A limiter that lets traffic through when
+ * its backing store is down is a security control with an off switch, and this is
+ * the one control standing between a courier and the client's closure code. Every
+ * lockout, and every fail-closed refusal, is written to
+ * {@link HandoverLockoutAudit}.
  */
 @Component
 public class HandoverCodeRateLimiter {
 
-    /** Windows are swept this often (in writes) so the map cannot grow without bound. */
-    private static final int SWEEP_EVERY = 1024;
-
     private final int maxPerDelivery;
     private final int maxPerCourier;
     private final Duration window;
-    private final Clock clock;
-    private final ConcurrentHashMap<String, Window> failures = new ConcurrentHashMap<>();
-    private final AtomicLong writes = new AtomicLong();
+    private final HandoverAttemptStore store;
+    private final HandoverLockoutAudit audit;
 
     /**
-     * The constructor Spring uses. Annotated because there is a second,
-     * package-private constructor for tests: with more than one candidate Spring
-     * cannot choose, and the application refuses to start.
+     * The constructor Spring uses. Annotated because there are two more, both for
+     * tests: with more than one candidate Spring cannot choose, and the
+     * application refuses to start.
      */
     @Autowired
     public HandoverCodeRateLimiter(
+            HandoverAttemptStore store,
+            HandoverLockoutAudit audit,
             @Value("${application.security.handover-rate-limit.max-per-delivery:5}") int maxPerDelivery,
             @Value("${application.security.handover-rate-limit.max-per-courier:20}") int maxPerCourier,
             @Value("${application.security.handover-rate-limit.window-seconds:900}") long windowSeconds) {
-        this(maxPerDelivery, maxPerCourier, Duration.ofSeconds(windowSeconds), Clock.systemUTC());
+        this(store, audit, maxPerDelivery, maxPerCourier, Duration.ofSeconds(windowSeconds));
     }
 
+    /**
+     * Tests (and a single-process run): a map-backed store driven by a clock they
+     * can move, so a fifteen-minute window need not be waited out.
+     */
     HandoverCodeRateLimiter(int maxPerDelivery, int maxPerCourier, Duration window, Clock clock) {
+        this(new InMemoryHandoverAttemptStore(clock), new HandoverLockoutAudit(),
+                maxPerDelivery, maxPerCourier, window);
+    }
+
+    HandoverCodeRateLimiter(HandoverAttemptStore store, HandoverLockoutAudit audit,
+                            int maxPerDelivery, int maxPerCourier, Duration window) {
+        this.store = store;
+        this.audit = audit;
         this.maxPerDelivery = maxPerDelivery;
         this.maxPerCourier = maxPerCourier;
         this.window = window;
-        this.clock = clock;
     }
 
     /**
      * Refuses the attempt if either counter is already exhausted. Called before
-     * the code is compared, so a blocked guesser costs no work and gets no
-     * signal about whether the code was close.
+     * the code is compared, so a blocked guesser costs no work and gets no signal
+     * about whether the code was close.
      *
-     * @throws RateLimitExceededException when the caller must wait
+     * @throws RateLimitExceededException when the caller must wait, and also when
+     *         the counter store is unreachable -- the throttle fails closed rather
+     *         than letting an unthrottled guess through
      */
     public void checkAllowed(UUID deliveryId, UUID courierId) {
-        long now = clock.millis();
-
         String delivery = deliveryKey(deliveryId);
-        if (count(delivery, now) >= maxPerDelivery) {
-            long wait = retryAfterSeconds(delivery, now);
+        String courier = courierId == null ? null : courierKey(courierId);
+
+        long deliveryCount;
+        long courierCount = 0L;
+        try {
+            deliveryCount = store.count(delivery);
+            // Only spend a second round trip on the courier when the delivery is
+            // not already over its own (tighter) ceiling.
+            if (deliveryCount < maxPerDelivery && courier != null) {
+                courierCount = store.count(courier);
+            }
+        } catch (AttemptStoreUnavailableException e) {
+            long wait = Math.max(1L, window.toSeconds());
+            audit.failClosed("read the wrong-code counters", deliveryId.toString(), e);
+            throw new RateLimitExceededException(
+                    "Handover-code checks are temporarily unavailable. Try again in "
+                            + wait + " seconds.", wait);
+        }
+
+        if (deliveryCount >= maxPerDelivery) {
+            long wait = waitFor(delivery);
+            audit.lockedOut("delivery", deliveryId.toString(), (int) deliveryCount, maxPerDelivery, wait);
             throw new RateLimitExceededException(
                     "Too many incorrect handover codes for this delivery. Try again in "
                             + wait + " seconds.", wait);
         }
 
-        if (courierId != null) {
-            String courier = courierKey(courierId);
-            if (count(courier, now) >= maxPerCourier) {
-                long wait = retryAfterSeconds(courier, now);
-                throw new RateLimitExceededException(
-                        "Too many incorrect handover codes. Try again in " + wait + " seconds.", wait);
-            }
+        if (courier != null && courierCount >= maxPerCourier) {
+            long wait = waitFor(courier);
+            audit.lockedOut("courier", courierId.toString(), (int) courierCount, maxPerCourier, wait);
+            throw new RateLimitExceededException(
+                    "Too many incorrect handover codes. Try again in " + wait + " seconds.", wait);
         }
     }
 
-    /** Records one wrong code against both the delivery and the courier. */
+    /**
+     * Records one wrong code against both the delivery and the courier.
+     *
+     * <p>A store failure here is logged but not thrown: the caller is already
+     * answering "invalid code", and the very next {@link #checkAllowed} refuses
+     * while the store is still down, so the lost write is not a way through.
+     */
     public void recordFailure(UUID deliveryId, UUID courierId) {
-        long now = clock.millis();
-        increment(deliveryKey(deliveryId), now);
-        if (courierId != null) {
-            increment(courierKey(courierId), now);
-        }
-        if (writes.incrementAndGet() % SWEEP_EVERY == 0) {
-            sweep(now);
+        try {
+            store.increment(deliveryKey(deliveryId), window);
+            if (courierId != null) {
+                store.increment(courierKey(courierId), window);
+            }
+        } catch (AttemptStoreUnavailableException e) {
+            audit.failClosed("record a wrong handover code", deliveryId.toString(), e);
         }
     }
 
@@ -125,50 +162,35 @@ public class HandoverCodeRateLimiter {
      * looser ceiling.
      */
     public void recordSuccess(UUID deliveryId) {
-        failures.remove(deliveryKey(deliveryId));
-    }
-
-    private void increment(String key, long now) {
-        failures.compute(key, (k, existing) -> {
-            if (existing == null || expired(existing, now)) {
-                return new Window(now, 1);
-            }
-            return new Window(existing.startMillis(), existing.count() + 1);
-        });
-    }
-
-    private int count(String key, long now) {
-        Window window = failures.get(key);
-        if (window == null || expired(window, now)) {
-            return 0;
+        try {
+            store.clear(deliveryKey(deliveryId));
+        } catch (AttemptStoreUnavailableException e) {
+            audit.failClosed("clear a handover counter", deliveryId.toString(), e);
         }
-        return window.count();
     }
 
-    private boolean expired(Window window, long now) {
-        return now - window.startMillis() >= this.window.toMillis();
-    }
-
-    private long retryAfterSeconds(String key, long now) {
-        Window window = failures.get(key);
-        if (window == null) {
-            return Math.max(1L, this.window.toSeconds());
+    /**
+     * Whole seconds the caller must wait. The counter's own remaining TTL is the
+     * honest answer; when it cannot be read, the whole window is the safe
+     * over-estimate. Clamped so a {@code Retry-After} is never zero and never
+     * longer than the window.
+     */
+    private long waitFor(String key) {
+        long ttl;
+        try {
+            ttl = store.retryAfterSeconds(key);
+        } catch (AttemptStoreUnavailableException e) {
+            ttl = -1L;
         }
-        long remainingMillis = window.startMillis() + this.window.toMillis() - now;
-        return Math.max(1L, (remainingMillis + 999) / 1000);
-    }
-
-    private void sweep(long now) {
-        failures.entrySet().removeIf(entry -> expired(entry.getValue(), now));
+        long max = Math.max(1L, window.toSeconds());
+        return ttl < 1L || ttl > max ? max : ttl;
     }
 
     private static String deliveryKey(UUID deliveryId) {
-        return "delivery:" + deliveryId;
+        return "handover:delivery:" + deliveryId;
     }
 
     private static String courierKey(UUID courierId) {
-        return "courier:" + courierId;
+        return "handover:courier:" + courierId;
     }
-
-    private record Window(long startMillis, int count) {}
 }
