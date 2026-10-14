@@ -148,7 +148,7 @@ warning ever stops appearing, so the regression cannot come back quietly.
 > put a real signing key in it, and start it:
 >
 > ```bash
-> cp .env.example .env          # then set JWT_SECRET_KEY (openssl rand -hex 32)
+> cp .env.example .env          # then set JWT_SECRET_KEY (openssl rand -hex 32) AND DB_PASSWORD
 > docker compose up --build
 > ```
 >
@@ -183,15 +183,17 @@ To enable the assistant:
 
 ```bash
 ollama serve                      # in its own terminal
-ollama pull llama3.1:8b           # chat model (~5 GB, fits an 8 GB GPU)
+ollama pull llama3.2:3b           # chat model (~2 GB, runs on a plain laptop CPU)
 ollama pull nomic-embed-text      # embedding model for pgvector
 ```
 
 The two model names are configured in `backend/src/main/resources/application.yml`
 and can be overridden with `SPRING_AI_OLLAMA_CHAT_MODEL` and
-`SPRING_AI_OLLAMA_EMBEDDING_MODEL`. The default chat model is `llama3.1:8b`, which
-wants roughly 5 GB of VRAM or RAM; on a lighter machine set
-`SPRING_AI_OLLAMA_CHAT_MODEL=llama3.2:1b` (or `:3b`) and pull that one instead.
+`SPRING_AI_OLLAMA_EMBEDDING_MODEL`. The default chat model is `llama3.2:3b`, a
+deliberate middle: the 1B model proved too small in testing (it ignored the FAQ
+and fired the cancellation tool on unrelated questions), while 8B answers best
+but costs a ~5 GB download and is slow without a GPU. For maximum answer
+quality set `SPRING_AI_OLLAMA_CHAT_MODEL=llama3.1:8b` and pull that one instead.
 The FAQ corpus is rebuilt into the vector store on every startup, so editing
 `faq.txt` takes effect on the next boot.
 
@@ -341,6 +343,12 @@ mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo
 | `admin@swift.com` | `password123` | `ADMIN` |
 | `courier1@swift.com` | `password123` | `LIVREUR` |
 | `client1@swift.com` | `password123` | `CLIENT` |
+
+These are public demo accounts with published passwords, seeded only under the
+`demo` profile (including the public cloud instance) so the platform is
+demoable on first boot. They hold demo data only; nothing about them is a
+production credential, and connection secrets (`JWT_SECRET_KEY`,
+`DB_PASSWORD`) have no defaults anywhere and refuse to boot without real values.
 
 If you would rather promote an account you registered yourself, do it directly
 in the database. Registration refuses the `ADMIN` role on purpose, because the

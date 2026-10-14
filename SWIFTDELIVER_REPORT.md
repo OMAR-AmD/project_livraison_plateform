@@ -73,7 +73,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 
 ### 4.1 RAG Customer Assistant (local/demo-only)
 - Endpoint: POST /api/v1/client/chat (client-authenticated).
-- Stack: Spring AI + Ollama (llama3.1:8b for chat, nomic-embed-text for embeddings), pgvector-backed vector store (FAQ chunks).
+- Stack: Spring AI + Ollama (llama3.2:3b for chat by default, llama3.1:8b optional, nomic-embed-text for embeddings), pgvector-backed vector store (FAQ chunks).
 - Capabilities: answers FAQ; grounds in client's active orders (IDs, addresses, status, price, payment); can call cancelDeliveryFunction to cancel only the client's own order, using exact ID; constrained tool use with guardrails.
 - Behavior: returns friendly "unavailable" if Ollama missing/retrieval fails → rest of platform unaffected.
 - UI: floating ChatWidget in client dashboard (bottom-right). Only visible to clients (mounted in ClientView).
@@ -108,7 +108,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 
 ## 6. Limitations & Scope
 
-- **Chat availability**: requires Ollama running locally (llama3.1:8b + nomic-embed-text). Unavailable on Render by design (zero-cost). 
+- **Chat availability**: requires Ollama running locally (llama3.2:3b + nomic-embed-text). Unavailable on Render by design (zero-cost). 
 - **Nominatim**: external reverse/geocode lookups used in browser; tests stub it for determinism.
 - **OSRM**: demo/public or local container; absence degrades to manual dispatch.
 - **Wake lock**: best-effort; on some browsers/OS the "Signal lost" badge can still appear if screen locks aggressively (documented).

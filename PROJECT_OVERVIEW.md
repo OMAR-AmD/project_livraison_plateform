@@ -230,7 +230,7 @@ plateforme-livraison/
 │   │   ├── application.yml
 │   │   ├── faq.txt               RAG corpus
 │   │   └── trajectory_fraud_rf.json.gz   exported model
-│   ├── src/test/java/...         16 test classes (91 tests)
+│   ├── src/test/java/...         25 test classes (166 tests)
 │   ├── Dockerfile
 │   ├── mvnw / mvnw.cmd
 │   └── pom.xml
@@ -560,7 +560,8 @@ baseline; the unsupervised variant did not beat it.
 (a) the FAQ corpus via **pgvector** retrieval and (b) the caller's **live** order
 state (status, price, payment).
 
-**Stack.** Spring AI + Ollama: `llama3.1:8b` for chat, `nomic-embed-text` for
+**Stack.** Spring AI + Ollama: `llama3.2:3b` for chat (laptop default;
+`llama3.1:8b` optional for max quality), `nomic-embed-text` for
 embeddings, pgvector store (HNSW, cosine, 768 dims). The corpus
 (`faq.txt`) is **rebuilt on every startup**.
 
@@ -700,7 +701,7 @@ the gate, Render is the target.
 ## 15. Testing and verification
 
 ### Backend unit + context tests
-`backend/mvnw.cmd test` — **16 classes, 91 tests**. The context tests
+`backend/mvnw.cmd test` — **25 classes, 166 tests**. The context tests
 (`BackendApplicationTests`, `InfrastructureWiringTest`, `HealthEndpointTest`,
 `MalformedRequestTest`) boot the real application and need Postgres + Redis, so
 they run locally once the Docker stack is up (or in CI via service containers).
@@ -708,6 +709,10 @@ they run locally once the Docker stack is up (or in CI via service containers).
 Highlights: `RunRuleTest` (9), `FraudTrailStoreTest` (12),
 `TrajectoryFraudModelTest` (Java↔Python parity), `TrajectoryFraudServiceTest` (7),
 `HandoverCodeRateLimiterTest` (10), `HandoverCodeThrottleTest` (2),
+`HandoverCodeRateLimiterFailClosedTest` (7), `RedisHandoverAttemptStoreTest` (7),
+`InMemoryHandoverAttemptStoreTest` (6), `HandoverThrottleRedisIntegrationTest` (6, real Redis),
+`HandoverCodeTest` (3), `SealChainTest` (13), `SealChainWiringTest` (26),
+`SealChainBackfillTest` (4), `RequiredSecretsGuardTest` (2),
 `LoginRateLimiterTest` (9), `JwtServiceTest` (8), `DeliveryProofServiceTest` (9),
 `CourierStatsTest` (5), `RouteOptimizationServiceTest`,
 `DeliveryServiceRedisOutageTest` (Redis-outage degradation).
@@ -723,6 +728,7 @@ Each exits non-zero on failure, so a regression cannot return quietly.
 | `verify_fraud_panel.js` | honest vs fraud trajectories; the **run rule** at the fleet-summary endpoint; the three badge states (`AI alert` / `AI ok` / no tag); score-curve modal + disclaimers; 403 for non-admins |
 | `verify_fraud_live.js` | ~7 min: a real honest pass then a stall-then-teleport burst; the two passes **disagree** on one delivery; only the fraud run trips the badge |
 | `verify_handover.js` | the 6-digit code path end-to-end (issue, wrong code refused, right code seals `codeVerified`) |
+| `verify_chain.js` | the seal chain live (links, concurrent seals, tombstone delete green, SQL delete breaks at the successor, tail gap stated) |
 | `verify_assign.js` / `verify_assign_ui.js` | assignment rules and no-reassign behaviour |
 | `verify_pages.js`, `verify_pwa.js`, `verify_basemap.js`, `verify_client_map.js`, `verify_gps_pickup.js`, `verify_real_gps.js` | routes, offline/SW honesty, tile fallback+Retry, client map scope, GPS pickup, real-GPS + wake lock |
 
@@ -733,11 +739,11 @@ assistant — driving the **real UI** and the **real scripts**, and timestamps
 every phase. It cleans up its own orders and prints a per-phase timeline.
 
 ### Latest local run (Docker up, this repo)
-- Backend: **91 tests, 0 failures, 0 errors, 0 skipped** (16 classes).
+- Backend: **166 tests, 0 failures, 0 errors, 0 skipped** (25 classes).
 - `verify_stats` **17/17** · `verify_fraud_panel` **17/17** ·
-  `verify_fraud_live` **10/10** · `verify_handover` **12/12**.
+  `verify_fraud_live` **10/10** · `verify_handover` **12/12** · `verify_chain` **13/13**.
 - `rehearse_demo.js`: **15/15 checks, 111.2 s** total, assistant answered in
-  **3.1 s**.
+  **3.1 s** (measured with the 8B model; the default is now 3B).
 
 > `verify_assign_ui.js` has a known, documented nuance: its last two checks can
 > fail when live user orders shift the dispatch balance onto courier2, making the
@@ -778,11 +784,11 @@ defaults for a local run:
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
 | `PORT` | `8080` | Backend listening port (PaaS assigns it) |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` | localhost / 5432 / delivery_db / admin / password123 | Postgres |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` | localhost / 5432 / delivery_db / admin / **(none — required)** | Postgres (compose: `.env`; tests: surefire test value) |
 | `REDIS_HOST` / `REDIS_PORT` | localhost / 6379 | Redis |
 | `OSRM_BASE_URL` | `http://localhost:5000` | Routing engine |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local LLM (container uses `host.docker.internal`) |
-| `SPRING_AI_OLLAMA_CHAT_MODEL` | `llama3.1:8b` | Chat model (use `llama3.2:1b`/`:3b` on light machines) |
+| `SPRING_AI_OLLAMA_CHAT_MODEL` | `llama3.2:3b` | Chat model (laptop default; `llama3.1:8b` for max quality) |
 | `SPRING_AI_OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
 | `JWT_SECRET_KEY` | **(none — required)** | JWT signing key (≥ 32 random bytes) |
 | `PROOF_HMAC_KEY` | falls back to `JWT_SECRET_KEY` | Root secret for the proof MAC (the seal key is derived) |
@@ -799,7 +805,7 @@ defaults for a local run:
 ### Fastest path (whole stack in Docker)
 
 ```bash
-cp .env.example .env          # then set JWT_SECRET_KEY (openssl rand -hex 32)
+cp .env.example .env          # then set JWT_SECRET_KEY (openssl rand -hex 32) AND DB_PASSWORD
 docker compose up --build      # postgres, redis, osrm, backend, frontend
 # open http://localhost:3000 and sign in with a demo account
 ```
@@ -813,7 +819,8 @@ without it the platform runs but dispatch falls back to manual.
 # infrastructure only
 docker compose up -d postgres redis osrm
 
-# backend  (PowerShell: $env:JWT_SECRET_KEY = ...)
+# backend  (PowerShell: $env:JWT_SECRET_KEY = ... ; $env:DB_PASSWORD = ... — both
+# required, the backend refuses to boot naming whichever is missing)
 cd backend
 mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo
 
@@ -827,7 +834,7 @@ npm run dev
 
 ```bash
 ollama serve
-ollama pull llama3.1:8b        # chat model (~5 GB)
+ollama pull llama3.2:3b          # chat model, the default (~2 GB)
 ollama pull nomic-embed-text   # embeddings
 ```
 
@@ -903,8 +910,8 @@ Running the suites against an already-warm stack exposed two latent fragilities
    contract (the run rule) plus ≥ 1 flagged fix.
 
 ### Current repository state
-- Branch `main`, in sync with `origin/main`, HEAD `479b4b6`, working tree clean.
-- Backend **91/91** tests green; the full Playwright set and the rehearsal green.
+- Branch `main`, in sync with `origin/main`, HEAD `e03f277`, working tree clean.
+- Backend **166/166** tests green; the full Playwright set and the rehearsal green.
 
 ---
 

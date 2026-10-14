@@ -9,10 +9,12 @@ Each section below shows:
 - **Framing document** — what the submitted document states or commits to.
 - **Advancement** — what has been delivered, with evidence.
 - **NEW** marks work completed *after* the framing document (the 2026-10-13 batch,
-  commits `f29167c`, `dc1de83`, `479b4b6`, `59a9155`).
+  commits `f29167c`, `dc1de83`, `479b4b6`, `59a9155`, the 2026-10-14 throttle
+  hardening `0c6620d`, and the seal-chain batch `563eaee`, `c67303e`,
+  `2b91ac4`, `afdc3c5`).
 
-Repository: branch `main`, code baseline `59a9155`, in sync with `origin/main`.
-Backend tests: **91 / 91 green**. Playwright verifiers + 15-check rehearsal: green.
+Repository: branch `main`, code baseline `e03f277`, in sync with `origin/main`.
+Backend tests: **166 / 166 green**. Playwright verifiers + 15-check rehearsal: green.
 
 ---
 
@@ -23,7 +25,7 @@ Benramdane Kamal, Akby Anass; repository on branch `main`.
 
 **Advancement**
 - Repository finalised and public: `https://github.com/OMAR-AmD/project_livraison_plateform`, branch `main`.
-- `main` in sync with `origin/main`; working tree clean; code baseline `59a9155`.
+- `main` in sync with `origin/main`; working tree clean; code baseline `e03f277`.
 - Full documentation set in the repo: `README.md`, `SYSTEM_ARCHITECTURE.md`,
   `API_REFERENCE.md`, `DEMO.md`, `DEPLOY.md`, `SWIFTDELIVER_REPORT.md`.
 - **NEW** — `PROJECT_OVERVIEW.md` added: the whole platform in one self-contained document.
@@ -133,14 +135,14 @@ rejected. Secondary: RAG with ownership-checked tools.
 
 **Framing document.** Scikit-learn Random Forest trained offline, exported as
 gzipped JSON, scored in-process in Java. OR-Tools VRP, OSRM times/distances.
-Ollama `llama3.1:8b` + `nomic-embed-text`, pgvector FAQ. No black-box API.
+Ollama `llama3.2:3b` (laptop default; `llama3.1:8b` optional) + `nomic-embed-text`, pgvector FAQ. No black-box API.
 
 **Advancement**
 - Shipped artefact: `backend/src/main/resources/trajectory_fraud_rf.json.gz`,
   evaluated in-process by Java.
 - OR-Tools VRP fed by an OSRM `/table` matrix; a per-delivery `isServed()` guard
   ensures a dropped stop cannot be silently assigned.
-- Ollama `llama3.1:8b` (chat) + `nomic-embed-text` (embeddings); pgvector store
+- Ollama `llama3.2:3b` (chat, laptop default) + `nomic-embed-text` (embeddings); pgvector store
   (HNSW, cosine, 768 dims); the FAQ corpus is rebuilt on every startup.
 - **No black-box API anywhere in the request path** — routing, embeddings and the
   LLM all run locally or in-process.
@@ -157,16 +159,57 @@ capped in November"; the canvas now records the partial delivery and the
 roadmap's Nov W1–W2 bar for what remains.)*
 
 **Advancement**
-- **NEW** — the 6-digit handover code is **now brute-force throttled**:
+- **NEW** — the 6-digit handover code is **brute-force throttled**:
   `HandoverCodeRateLimiter` permits **5 failures per delivery** and
   **20 per courier** per 15-minute window, answered `429` + `Retry-After`; a
-  correct code clears the delivery counter. It is **in memory and per instance**
-  (counters reset on restart).
-  Tests: `HandoverCodeRateLimiterTest` (10), `HandoverCodeThrottleTest` (2).
-- **Still open** — the roadmap's Nov W1–W2 "Attempt caps + lockout log" bar:
-  shared-store atomic counters (**Redis INCR+EXPIRE**) for multi-instance, a
-  **lockout audit log**, and a **mutation-testing pass** (today's tests are JUnit
-  and mutation-aware, but no mutation run has been executed).
+  correct code clears the delivery counter.
+- **NEW (2026-10-14, `0c6620d`)** — the roadmap's Nov W1–W2 "Attempt caps +
+  lockout log" bar is **closed**. The counters live behind a `HandoverAttemptStore`
+  seam with **Redis in production** (`RedisHandoverAttemptStore`), so two backend
+  instances share **one budget** instead of one each; the increment is a **single
+  Lua script** that does `INCR` and arms `EXPIRE` together, so a counter can never
+  outlive its window. The throttle **fails closed**: if Redis is unreachable the
+  attempt is **refused**, not waved through, and a corrupt counter value counts as
+  unavailable too. Every lockout and every fail-closed refusal is written to
+  `HandoverLockoutAudit` (logger `HANDOVER_LOCKOUT_AUDIT`).
+- Throttle tests: `HandoverCodeRateLimiterTest` (10), `HandoverCodeThrottleTest`
+  (2), `HandoverCodeRateLimiterFailClosedTest` (7), `RedisHandoverAttemptStoreTest`
+  (7), `InMemoryHandoverAttemptStoreTest` (6), and
+  `HandoverThrottleRedisIntegrationTest` (6), which runs against a **real Redis**
+  and proves two limiter instances share one counter and that concurrent
+  increments are atomic.
+- **Mutation pass** — PIT, scoped to the throttle classes
+  (`./mvnw pitest:mutationCoverage`): **53 of 54 mutants killed (98%), 0
+  uncovered, 90% line coverage**; the single survivor is an equivalent boundary
+  mutant (`ttl > max` and `ttl >= max` return the same value).
+- **NEW (2026-10-14, `563eaee` + `c67303e`)** — the roadmap's second Nov
+  `[MUST]` bar, seal chaining + `verifyChain`, is **closed**. Each new seal is
+  a **v2 payload** committing to its predecessor's hash inside the HMAC, so
+  editing the stored link alone invalidates the seal; v1 seals keep verifying
+  and no history was rewritten. Sealing takes a **locked head row**
+  (`SELECT ... FOR UPDATE`), so two simultaneous seals line up instead of
+  forking, and stamps a **monotonic sequence**, so same-microsecond seals
+  cannot read as reorders. Deleting a sealed row through the API writes a
+  **signed tombstone** (full seal copy at its position, plus when/by whom,
+  HMAC-covered) and the walk verifies straight through it; a row removed
+  behind the service still breaks the chain at its successor. Sealed
+  deliveries are **terminal** (no re-seal, no unassign). A startup backfill
+  links and numbers pre-chain rows without touching their seals — the chain
+  protects from that point forward, not retroactively. Known gap, stated
+  plainly: deleting the *newest* seal leaves a valid shorter chain; that is
+  what December's **chain-head anchor** closes.
+- Chain exit proof is live: `frontend/verify_chain.js` seals two deliveries,
+  seals two more **concurrently**, deletes one through the API (tombstone, chain
+  still green), deletes one by SQL (breaks at the successor, named), deletes
+  the tail (green again, the stated gap) — **13/13** against a real database.
+- Chain mutation pass (PIT scope extended to the proof service, the delivery
+  service and the backfill): `DeliveryProofService` **92/92 killed** — including
+  the first unit tests for handover codes (`HandoverCodeTest`), which had zero
+  coverage before; the delivery-service chain paths fully killed; overall test
+  strength **98%**. Six survivors, each proven equivalent by hand-mutation
+  (merge-boundary ties are unreachable under the locked counter; the rest are
+  log/rounding boundaries returning the same value). The 155 uncovered mutants
+  sit in service methods covered live, not by unit tests.
 - HMAC-SHA256 proof seal under a **derived** key (distinct from the JWT key);
   `GET /admin/deliveries/{id}/proof` re-derives and reports `verified`, and
   returns `409` when a delivery was never sealed.
@@ -242,8 +285,8 @@ checks; Render deploys on green only.
   row locators; the live verifier asserts the product contract (the run rule)
   rather than an unstable per-fix count.
 - CU / CI: `mvnw` tests, lint/build, container checks; Render deploys on green only.
-- Latest runs: **91 backend tests green**; `verify_stats` 17/17,
-  `verify_fraud_panel` 17/17, `verify_fraud_live` 10/10, rehearsal 15/15.
+- Latest runs: **166 backend tests green**; `verify_stats` 17/17,
+  `verify_fraud_panel` 17/17, `verify_fraud_live` 10/10, `verify_chain` 13/13, rehearsal 15/15.
 
 ---
 
@@ -267,17 +310,25 @@ Payment simulated (no PSP). Chat unavailable on public cloud; free-tier sleep,
 
 ## Summary — advancement since the framing document
 
-Four commits, 23 files, +2101 / −76, all on **2026-10-13**:
+The 2026-10-13 batch was four commits, 23 files, +2101 / −76; the throttle
+hardening followed on 2026-10-14 (`0c6620d`), then the seal-chain batch
+(`563eaee`, `c67303e`, `2b91ac4`, `afdc3c5`):
 
 | Commit | Advancement |
 | :--- | :--- |
-| `f29167c` | Handover-code throttle — in-memory attempt caps, ahead of the roadmap (the shared-store atomic counters, lockout log and mutation pass remain, §8); `RunRule` ships the k=3 rule into the badge (§6); `ARRIVED` counts as in-progress in stats (§10). |
+| `f29167c` | Handover-code throttle — in-memory attempt caps, ahead of the roadmap (the shared-store counters, lockout log and mutation pass were still open then; delivered in `0c6620d`, §8); `RunRule` ships the k=3 rule into the badge (§6); `ARRIVED` counts as in-progress in stats (§10). |
 | `dc1de83` | Playwright coverage for the run rule and `ARRIVED`. |
 | `479b4b6` | Fraud verifiers made robust to an interrupted probe run. |
 | `59a9155` | `PROJECT_OVERVIEW.md` added. |
+| `0c6620d` | Throttle hardening (§8): counters moved to shared Redis (atomic INCR+EXPIRE), fail-closed on store outage, lockout audit log, and a PIT mutation pass — **53/54 mutants killed**, plus a real-Redis integration test. |
+| `563eaee` | Seal chaining (§8): v2 seals committing to their predecessor, `verifyChain` + `GET /proof-chain`, startup backfill, 15 chain tests. |
+| `c67303e` | Chain hardening: locked head row (concurrent seals line up), monotonic sequence, signed tombstones for sealed deletes, terminal seals. |
+| `2b91ac4` | Mutation-driven chain tests + `frontend/verify_chain.js` (live 13/13 exit proof); proof-service PIT **92/92**. |
+| `afdc3c5` | Backfill head-save assertion (one-line mutation kill). |
 
 **The headline correction:** the framing document's §6 stated the k=3 run rule was
 *shipped*, but at that time the badge fired on a single flagged fix and
 `RunRule.java` did not exist. That gap is now closed — the claim is true in the
-code, and the §8 attempt caps are delivered ahead of schedule (the shared-store
-atomic counters, lockout log and mutation pass remain on the roadmap).
+code — and both §8 Nov bars are fully closed: the throttle bar in `0c6620d`
+and seal chaining + `verifyChain` in `563eaee`/`c67303e`, with the live demo
+and the mutation passes to prove it.
