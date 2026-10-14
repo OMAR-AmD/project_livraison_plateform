@@ -4,7 +4,8 @@ A solo demo that fits in about ten minutes. Every duration below was measured on
 the local stack during a full rehearsal, not estimated. The ordering is the one
 validated end-to-end by `frontend/rehearse_demo.js` (see "Full rehearsal" below).
 
-Accounts — public demo accounts with a published password (`password123`):
+Accounts — public demo accounts with a published password (`password123` locally;
+on the public site a generated `DEMO_PASSWORD` from the Render dashboard):
 `admin@swift.com`, `courier1@swift.com`,
 `courier2@swift.com`, `client1@swift.com`, `client2@swift.com`,
 `client3@swift.com`. They exist so the platform (local and cloud) is demoable

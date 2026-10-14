@@ -153,9 +153,11 @@ warning ever stops appearing, so the regression cannot come back quietly.
 > ```
 >
 > Then open `http://localhost:3000`. Two things the one-liner does not hide:
-> routing still needs prepared map data (step 1 below; without it the platform
-> runs but dispatch falls back to manual), and the container reaches Ollama on
-> the host through `host.docker.internal`. The numbered steps below are the
+> routing still needs prepared map data for offline use (step 1 below); without
+> it, quotes and bookings automatically fall back to the public OSRM demo
+> server — slower and rate-limited, and the log says which engine priced each
+> order — while dispatch falls back to manual. And the container reaches Ollama
+> on the host through `host.docker.internal`. The numbered steps below are the
 > local-development path (Maven + npm), which needs no map data to boot.
 
 ### Prerequisites
@@ -347,8 +349,11 @@ mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo
 These are public demo accounts with published passwords, seeded only under the
 `demo` profile (including the public cloud instance) so the platform is
 demoable on first boot. They hold demo data only; nothing about them is a
-production credential, and connection secrets (`JWT_SECRET_KEY`,
-`DB_PASSWORD`) have no defaults anywhere and refuse to boot without real values.
+production credential. Locally the password is the documented `password123`;
+on Render it is a generated `DEMO_PASSWORD` (dashboard → backend service →
+Environment), and every boot re-syncs the accounts to whatever value is set,
+so the dashboard value always works. Connection secrets (`JWT_SECRET_KEY`,
+`DB_PASSWORD`) are different: they have no defaults anywhere and refuse to boot without real values.
 
 If you would rather promote an account you registered yourself, do it directly
 in the database. Registration refuses the `ADMIN` role on purpose, because the

@@ -173,7 +173,7 @@ mean traffic was reaching an instance with no detector.
 | Activity feed | `delivery/DeliveryService.java` → `getAdminActivities()` |
 | SSE stream | `notification/NotificationController.java` → `stream()` |
 | RAG retrieval + prompt | `ai/ChatService.java` → `chatWithClient()` |
-| Cancel tool (ownership-checked) | `ai/AiConfiguration.java` → `cancelDeliveryFunction()` |
+| Cancel tools (propose + confirm, ownership-checked) | `ai/AiConfiguration.java` → `proposeCancellationFunction()` + `confirmCancellationFunction()` |
 | Fraud scoring (in-process) | `ai/TrajectoryFraudService.java` → `evaluate()` |
 | Fraud score history (Redis) | `ai/FraudTrailStore.java` → `record()` |
 | Admin fraud trails | `delivery/AdminDeliveryController.java` → `getFraudTrailSummaries()` |

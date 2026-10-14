@@ -78,9 +78,13 @@ curl -s -o /dev/null -w '%{http_code}\n' https://swiftdeliver-frontend.onrender.
 # 3. The demo accounts exist in the cloud database.
 #    A token here means Postgres accepted the connection, Hibernate created the
 #    schema, and the demo seeder ran -- not merely that a web server is up.
+#    The cloud demo password is generated per deployment (DEMO_PASSWORD): copy it
+#    from the Render dashboard (backend service -> Environment), it is NOT the
+#    local password123.
+#    export DEMO_PASSWORD=paste-from-render-dashboard
 curl -s -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@swift.com","password":"password123"}'
+  -d "{\"email\":\"admin@swift.com\",\"password\":\"$DEMO_PASSWORD\"}"
 # expected: a JSON object containing a non-empty "token"
 
 # 4. A body the server cannot read is the caller's error, not a server fault.
@@ -97,7 +101,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 #    Note: signing out ends every admin session, including this one.
 TOKEN=$(curl -s -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@swift.com","password":"password123"}' \
+  -d "{\"email\":\"admin@swift.com\",\"password\":\"$DEMO_PASSWORD\"}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 curl -s -o /dev/null -w 'logout:  %{http_code}\n' -X POST \
   https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/logout \
@@ -124,15 +128,15 @@ curl -s -o /dev/null -w 'limited: %{http_code}\n' -X POST \
 #    500, but this asserts the cache is genuinely reachable -- same region.
 CTOKEN=$(curl -s -X POST https://swiftdeliver-backend-j47m.onrender.com/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"client1@swift.com","password":"password123"}' \
+  -d "{\"email\":\"client1@swift.com\",\"password\":\"$DEMO_PASSWORD\"}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 curl -s -o /dev/null -w 'client deliveries: %{http_code}\n' \
   https://swiftdeliver-backend-j47m.onrender.com/api/v1/client/deliveries \
   -H "Authorization: Bearer $CTOKEN"                      # expected: 200
 ```
 
-Then open the frontend URL, sign in as `admin@swift.com` / `password123`, and
-confirm the dashboard renders.
+Then open the frontend URL, sign in as `admin@swift.com` with the `DEMO_PASSWORD`
+value from the Render dashboard, and confirm the dashboard renders.
 
 **Warm both services about 60 seconds before demoing.** The cold-start penalty is
 real and it is the one thing that will make a working platform look broken in

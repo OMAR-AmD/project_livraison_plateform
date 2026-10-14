@@ -14,7 +14,7 @@ Each section below shows:
   `2b91ac4`, `afdc3c5`).
 
 Repository: branch `main`, code baseline `e03f277`, in sync with `origin/main`.
-Backend tests: **166 / 166 green**. Playwright verifiers + 15-check rehearsal: green.
+Backend tests: **183 / 183 green**. Playwright verifiers + 15-check rehearsal: green.
 
 ---
 
@@ -237,8 +237,8 @@ RAG backend (Spring AI, pgvector, cancel/details/telemetry tools).
 - HMAC proofs with fail-closed handover codes (`DeliveryProofService`).
 - Fleet/proof APIs (`/admin/deliveries/fraud-trails`, `/{id}/fraud-trail`,
   `/admin/deliveries/{id}/proof`).
-- RAG backend: Spring AI + pgvector, `/client/chat`, with cancel / details /
-  telemetry tools.
+- RAG backend: Spring AI + pgvector, `/client/chat`, with propose/confirm cancel
+  (two tool calls, explicit yes between) + details / telemetry tools.
 
 ---
 
@@ -285,8 +285,9 @@ checks; Render deploys on green only.
   row locators; the live verifier asserts the product contract (the run rule)
   rather than an unstable per-fix count.
 - CU / CI: `mvnw` tests, lint/build, container checks; Render deploys on green only.
-- Latest runs: **166 backend tests green**; `verify_stats` 17/17,
-  `verify_fraud_panel` 17/17, `verify_fraud_live` 10/10, `verify_chain` 13/13, rehearsal 15/15.
+- Latest runs: **183 backend tests green**; `verify_stats` 17/17,
+  `verify_fraud_panel` 17/17, `verify_fraud_live` 10/10, `verify_chain` 13/13,
+  `verify_chat_discipline` 5/5, rehearsal 15/15.
 
 ---
 
@@ -305,6 +306,11 @@ Payment simulated (no PSP). Chat unavailable on public cloud; free-tier sleep,
 - Caveats documented rather than hidden: payment simulated; chat `unavailable`
   on the public cloud; free-tier sleep, 30-day Postgres, rate-limited
   OSRM/Nominatim.
+- **Measured footprint** (local stack, `docker stats`, built images): backend
+  ~465 MB, OSRM with maps ~800 MB, Postgres ~65 MB, frontend ~35 MB,
+  Redis ~13 MB — **~1.4 GB total**. Backend container restart to healthy:
+  **~4 min** (built image; first build and the one-time 20–60 min OSRM map
+  prep are on top). Adjectives retired in favour of these numbers.
 
 ---
 

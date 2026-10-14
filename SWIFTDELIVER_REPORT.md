@@ -74,7 +74,7 @@ The platform supports three roles (Client, Courier, Admin), real-time tracking, 
 ### 4.1 RAG Customer Assistant (local/demo-only)
 - Endpoint: POST /api/v1/client/chat (client-authenticated).
 - Stack: Spring AI + Ollama (llama3.2:3b for chat by default, llama3.1:8b optional, nomic-embed-text for embeddings), pgvector-backed vector store (FAQ chunks).
-- Capabilities: answers FAQ; grounds in client's active orders (IDs, addresses, status, price, payment); can call cancelDeliveryFunction to cancel only the client's own order, using exact ID; constrained tool use with guardrails.
+- Capabilities: answers FAQ; grounds in client's active orders (IDs, addresses, status, price, payment); cancelling takes two steps (propose, then an explicit yes executes it) and only the client's own PENDING order, using exact ID; constrained tool use with guardrails.
 - Behavior: returns friendly "unavailable" if Ollama missing/retrieval fails → rest of platform unaffected.
 - UI: floating ChatWidget in client dashboard (bottom-right). Only visible to clients (mounted in ClientView).
 - Cloud: not cloud-wide (no Ollama on Render) → clients on phone hitting cloud get unavailable response. Works when backend can reach local Ollama (demo/LAN).
