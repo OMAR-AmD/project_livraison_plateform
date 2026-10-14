@@ -155,4 +155,19 @@ public class AdminDeliveryController {
         }
         return ResponseEntity.ok(proof);
     }
+
+    /**
+     * Verifies the whole sealed log as one hash chain and reports the first
+     * break, if any.
+     *
+     * <p>Reading one proof answers "is this delivery intact?"; walking the
+     * chain answers "is the log intact?" — no sealed delivery deleted,
+     * reordered or relinked since. An empty log verifies: there is nothing to
+     * disagree with. This is the read side of the November seal-chaining bar;
+     * December anchors this result's head outside the database.
+     */
+    @GetMapping("/proof-chain")
+    public ResponseEntity<DeliveryProofService.ChainVerification> verifyProofChain() {
+        return ResponseEntity.ok(deliveryService.verifySealChain());
+    }
 }

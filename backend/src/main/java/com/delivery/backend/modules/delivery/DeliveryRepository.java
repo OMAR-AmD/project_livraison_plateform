@@ -13,6 +13,17 @@ public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
     List<Delivery> findByCourierOrderByCreatedAtDesc(User courier);
     List<Delivery> findTop10ByOrderByUpdatedAtDesc();
 
+    /**
+     * Every sealed row in chain order. The chain is global — one log for the
+     * platform, so there is exactly one head for December's anchor — ordered by
+     * when the seal was made, with the id breaking ties between seals made in
+     * the same microsecond.
+     */
+    List<Delivery> findByProofHashNotNullOrderByDeliveredAtAscIdAsc();
+
+    /** The current chain head: the seal the next delivery will link against. */
+    java.util.Optional<Delivery> findFirstByProofHashNotNullOrderByDeliveredAtDescIdDesc();
+
     long countByStatus(DeliveryStatus status);
     
     @org.springframework.data.jpa.repository.Query("SELECT COUNT(d) FROM Delivery d WHERE d.status = :status AND d.updatedAt >= :date")

@@ -216,7 +216,8 @@ public class DeliveryService {
             Double deliveredLat,
             Double deliveredLng,
             Double distanceM,
-            String proof) {
+            String proof,
+            String prevHash) {
     }
 
     /**
@@ -238,13 +239,17 @@ public class DeliveryService {
 
         User courier = delivery.getCourier();
         boolean verifiable = courier != null && delivery.getClient() != null;
-        boolean verified = verifiable && proofService.verify(
+        // matchesSeal verifies under either payload version: pre-chain rows
+        // carry v1 seals with no link, chained rows carry v2 seals. A row the
+        // admin unassigned after sealing is unverifiable rather than tampered.
+        boolean verified = verifiable && proofService.matchesSeal(
                 delivery.getId(),
                 courier.getId(),
                 delivery.getClient().getId(),
                 delivery.getDeliveredLat(),
                 delivery.getDeliveredLng(),
                 delivery.getDeliveredAt(),
+                delivery.getPrevHash(),
                 delivery.getProofHash());
 
         return new DeliveryProofView(
@@ -254,7 +259,34 @@ public class DeliveryService {
                 delivery.getDeliveredLat(),
                 delivery.getDeliveredLng(),
                 delivery.getProofDistanceM(),
-                delivery.getProofHash());
+                delivery.getProofHash(),
+                delivery.getPrevHash());
+    }
+
+    /**
+     * Verifies the whole sealed log as one chain, in chain order.
+     *
+     * <p>Every sealed delivery verifies on its own; this is the check that the
+     * log itself is intact — that no sealed row was deleted, reordered or
+     * relinked since. Reports the first row that no longer follows, so an
+     * admin sees where the log breaks rather than just that it does.
+     */
+    @Transactional(readOnly = true)
+    public DeliveryProofService.ChainVerification verifySealChain() {
+        List<DeliveryProofService.ChainedSeal> rows = deliveryRepository
+                .findByProofHashNotNullOrderByDeliveredAtAscIdAsc()
+                .stream()
+                .map(delivery -> new DeliveryProofService.ChainedSeal(
+                        delivery.getId(),
+                        delivery.getCourier() == null ? null : delivery.getCourier().getId(),
+                        delivery.getClient() == null ? null : delivery.getClient().getId(),
+                        delivery.getDeliveredLat(),
+                        delivery.getDeliveredLng(),
+                        delivery.getDeliveredAt(),
+                        delivery.getPrevHash(),
+                        delivery.getProofHash()))
+                .toList();
+        return proofService.verifyChain(rows);
     }
 
     /**
@@ -779,15 +811,26 @@ public class DeliveryService {
         // break later: the in-memory clock carries nanoseconds, the column stores
         // microseconds, so re-deriving from the stored row would recompute a
         // different payload and report an honest delivery as tampered with.
-        DeliveryProofService.Seal seal = proofService.seal(
+        //
+        // The seal is chained: it commits to the previously sealed delivery, so
+        // the log itself becomes tamper-evident and not just each row. Two seals
+        // made at the same instant can read the same head and fork; that is not
+        // prevented here, it is detected — verifyChain reports the fork as the
+        // first row that no longer follows.
+        String prevHash = deliveryRepository
+                .findFirstByProofHashNotNullOrderByDeliveredAtDescIdDesc()
+                .map(Delivery::getProofHash)
+                .orElse(DeliveryProofService.CHAIN_GENESIS);
+        DeliveryProofService.Seal seal = proofService.sealChained(
                 delivery.getId(), courier.getId(), delivery.getClient().getId(), lat, lng,
-                LocalDateTime.now());
+                LocalDateTime.now(), prevHash);
 
         delivery.setDeliveredLat(lat);
         delivery.setDeliveredLng(lng);
         delivery.setDeliveredAt(seal.sealedAt());
         delivery.setProofDistanceM(distanceM);
         delivery.setProofHash(seal.hash());
+        delivery.setPrevHash(prevHash);
         if (codeOk) {
             delivery.setCodeVerified(true);
             delivery.setCodeVerifiedAt(LocalDateTime.now());

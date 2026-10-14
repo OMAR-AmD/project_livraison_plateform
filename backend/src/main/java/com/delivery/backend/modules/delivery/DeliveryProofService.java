@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -220,5 +221,146 @@ public class DeliveryProofService {
         return MessageDigest.isEqual(
                 recomputed.getBytes(StandardCharsets.UTF_8),
                 expectedSeal.getBytes(StandardCharsets.UTF_8));
+    }
+
+    // ---------------------------------------------------------------
+    // Seal chaining.
+    //
+    // A per-seal HMAC proves each delivery happened as recorded, but it says
+    // nothing about the log as a whole: a row deleted or reordered leaves every
+    // remaining seal verifying. So each new seal also commits to its
+    // predecessor. The predecessor's hash is part of the v2 payload below,
+    // which means the MAC itself binds the link — editing the stored prev_hash
+    // column alone invalidates the seal, and the key holder is the only party
+    // who can produce a seal with a different link.
+    //
+    // v1 seals (sealed before chaining, or rows whose link was never filled)
+    // keep verifying exactly as before; nothing historical is rewritten. A
+    // startup backfill fills in their prev_hash so the whole log chains, and
+    // {@link #matchesSeal} accepts a stored seal under either payload version.
+    // Accepting either version loses nothing: forging either one still requires
+    // the proof key.
+    // ---------------------------------------------------------------
+
+    /** The prev value stored on the first chained seal: it has no predecessor. */
+    public static final String CHAIN_GENESIS = "GENESIS";
+
+    /** Payload tag for seals that commit to a predecessor. v1 has no link. */
+    private static final String CHAINED_PAYLOAD_VERSION = "v2";
+
+    /** The exact string a chained seal covers: the v1 fields plus the link. */
+    public String buildChainedPayload(UUID deliveryId, UUID courierId, UUID clientId,
+                                      double lat, double lng, LocalDateTime timestamp,
+                                      String prevHash) {
+        return String.join("|",
+                CHAINED_PAYLOAD_VERSION,
+                deliveryId.toString(),
+                courierId.toString(),
+                clientId.toString(),
+                Double.toString(lat),
+                Double.toString(lng),
+                timestamp.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                prevHash == null ? CHAIN_GENESIS : prevHash);
+    }
+
+    /**
+     * Seals a delivery against its predecessor's hash (or {@code null} for the
+     * first seal, which normalises to {@link #CHAIN_GENESIS}). Returns the MAC
+     * and the canonical timestamp, like {@link #seal}.
+     */
+    public Seal sealChained(UUID deliveryId, UUID courierId, UUID clientId,
+                            double lat, double lng, LocalDateTime timestamp,
+                            String prevHash) {
+        LocalDateTime canonical = canonicalTimestamp(timestamp);
+        String payload = buildChainedPayload(deliveryId, courierId, clientId,
+                lat, lng, canonical, prevHash);
+        return new Seal(hmacHex(payload), canonical);
+    }
+
+    /** Recomputes a chained seal and compares it in constant time. */
+    public boolean verifyChained(UUID deliveryId, UUID courierId, UUID clientId,
+                                 double lat, double lng, LocalDateTime timestamp,
+                                 String prevHash, String expectedSeal) {
+        if (expectedSeal == null) {
+            return false;
+        }
+        String recomputed = sealChained(deliveryId, courierId, clientId,
+                lat, lng, timestamp, prevHash).hash();
+        return MessageDigest.isEqual(
+                recomputed.getBytes(StandardCharsets.UTF_8),
+                expectedSeal.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Whether the stored seal is genuine under either payload version: v1 for
+     * rows with no link, v1-or-v2 for linked rows (the backfill links pre-chain
+     * rows without rewriting their v1 seals). Null identities or a null seal
+     * never match — they are reported, not crashed on.
+     */
+    public boolean matchesSeal(UUID deliveryId, UUID courierId, UUID clientId,
+                               Double lat, Double lng, LocalDateTime timestamp,
+                               String prevHash, String expectedSeal) {
+        if (deliveryId == null || courierId == null || clientId == null
+                || lat == null || lng == null || timestamp == null
+                || expectedSeal == null) {
+            return false;
+        }
+        if (prevHash == null) {
+            return verify(deliveryId, courierId, clientId, lat, lng, timestamp, expectedSeal);
+        }
+        return verify(deliveryId, courierId, clientId, lat, lng, timestamp, expectedSeal)
+                || verifyChained(deliveryId, courierId, clientId,
+                        lat, lng, timestamp, prevHash, expectedSeal);
+    }
+
+    /** One sealed row as the chain walk sees it. Null identities mean the row
+     * was administratively unassigned after sealing: its link is still checked,
+     * but there is no identity left to re-derive its MAC from. */
+    public record ChainedSeal(UUID deliveryId, UUID courierId, UUID clientId,
+                              Double lat, Double lng, LocalDateTime timestamp,
+                              String prevHash, String seal) {
+        boolean checkable() {
+            return deliveryId != null && courierId != null && clientId != null
+                    && lat != null && lng != null && timestamp != null && seal != null;
+        }
+    }
+
+    /** The result of walking the whole sealed log in order. */
+    public record ChainVerification(boolean ok, int sealed, UUID brokenAt, String reason) {
+    }
+
+    /**
+     * Walks the sealed rows in chain order and reports the first break.
+     *
+     * <p>Each row's MAC is re-derived (either payload version), and each row's
+     * link must equal the previous row's seal — the first row must start the
+     * chain ({@code null} or {@link #CHAIN_GENESIS}). A tampered field fails
+     * the MAC; a deleted, reordered or inserted row fails the link; both point
+     * at the first row that no longer follows. An empty log verifies: there is
+     * nothing to disagree with.
+     */
+    public ChainVerification verifyChain(List<ChainedSeal> seals) {
+        String previous = null;
+        boolean first = true;
+        for (ChainedSeal row : seals) {
+            if (first) {
+                if (row.prevHash() != null && !CHAIN_GENESIS.equals(row.prevHash())) {
+                    return new ChainVerification(false, seals.size(), row.deliveryId(),
+                            "the first sealed delivery does not start the chain");
+                }
+                first = false;
+            } else if (row.prevHash() == null || !row.prevHash().equals(previous)) {
+                return new ChainVerification(false, seals.size(), row.deliveryId(),
+                        "the link does not point at the previous seal");
+            }
+            if (row.checkable() && !matchesSeal(row.deliveryId(), row.courierId(),
+                    row.clientId(), row.lat(), row.lng(), row.timestamp(),
+                    row.prevHash(), row.seal())) {
+                return new ChainVerification(false, seals.size(), row.deliveryId(),
+                        "the seal does not match its fields");
+            }
+            previous = row.seal();
+        }
+        return new ChainVerification(true, seals.size(), null, null);
     }
 }

@@ -69,6 +69,15 @@ public class Delivery {
     @Column(name = "proof_hash", length = 64)
     private String proofHash;
 
+    // Seal chaining (Nov bar). The proof hash of the previously sealed delivery,
+    // or "GENESIS" for the first chained seal. It is part of the v2 sealed
+    // payload, so the HMAC itself binds each seal to its predecessor: reordering
+    // or deleting a sealed row breaks verifyChain even though every remaining
+    // seal still verifies on its own. NULL means sealed before chaining shipped;
+    // a startup backfill links those rows without rewriting their seals.
+    @Column(name = "prev_hash", length = 64)
+    private String prevHash;
+
     // Voie A — handover-code factor. Set only when DELIVERED is sealed with a
     // verified code; never cleared, so the proof keeps which factors it had.
     // Nullable Boolean on purpose: ddl-auto:update adds the column with NULL
@@ -157,6 +166,8 @@ public class Delivery {
     public void setProofDistanceM(Double proofDistanceM) { this.proofDistanceM = proofDistanceM; }
     public String getProofHash() { return proofHash; }
     public void setProofHash(String proofHash) { this.proofHash = proofHash; }
+    public String getPrevHash() { return prevHash; }
+    public void setPrevHash(String prevHash) { this.prevHash = prevHash; }
     public boolean isCodeVerified() { return Boolean.TRUE.equals(codeVerified); }
     public void setCodeVerified(boolean codeVerified) { this.codeVerified = codeVerified; }
     public LocalDateTime getCodeVerifiedAt() { return codeVerifiedAt; }
