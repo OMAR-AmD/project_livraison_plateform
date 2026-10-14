@@ -90,6 +90,7 @@ class SealChainBackfillTest {
         assertEquals(1L, first.getSealSeq());
         assertEquals(first.getProofHash(), head.getHeadHash());
         assertEquals(1L, head.getLastSeq());
+        verify(headRepository).save(head);
     }
 
     @Test
