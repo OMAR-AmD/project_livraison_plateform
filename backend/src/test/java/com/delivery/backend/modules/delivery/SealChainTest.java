@@ -200,4 +200,30 @@ class SealChainTest {
         assertFalse(result.ok());
         assertEquals(D2, result.brokenAt());
     }
+
+    @Test
+    @DisplayName("a tombstone seal binds the deletion: what, where in the chain, when, by whom")
+    void aTombstoneSealBindsTheDeletion() {
+        String tomb = proofs.tombstoneSeal(D2, 2L, "seal-hash", "prev-hash", T2, "admin");
+        assertEquals(64, tomb.length());
+        assertTrue(proofs.verifyTombstone(D2, 2L, "seal-hash", "prev-hash", T2, "admin", tomb));
+
+        // Every field of the deletion record is covered: changing any one of
+        // them must fail, or a deletion could be rewritten after the fact.
+        assertFalse(proofs.verifyTombstone(D3, 2L, "seal-hash", "prev-hash", T2, "admin", tomb),
+                "which delivery was deleted");
+        assertFalse(proofs.verifyTombstone(D2, 3L, "seal-hash", "prev-hash", T2, "admin", tomb),
+                "where in the chain it stood");
+        assertFalse(proofs.verifyTombstone(D2, 2L, "other-hash", "prev-hash", T2, "admin", tomb),
+                "which seal it carried");
+        assertFalse(proofs.verifyTombstone(D2, 2L, "seal-hash", "other-prev", T2, "admin", tomb),
+                "which link it held");
+        assertFalse(proofs.verifyTombstone(D2, 2L, "seal-hash", "prev-hash", T3, "admin", tomb),
+                "when it was deleted");
+        assertFalse(proofs.verifyTombstone(D2, 2L, "seal-hash", "prev-hash", T2, "someone-else", tomb),
+                "who deleted it");
+        assertFalse(proofs.verifyTombstone(D2, 2L, "seal-hash", "prev-hash", T2, "admin", "0".repeat(64)));
+        assertFalse(proofs.verifyTombstone(D2, 2L, "seal-hash", "prev-hash", T2, "admin", null));
+        assertFalse(proofs.verifyTombstone(null, 2L, "seal-hash", "prev-hash", T2, "admin", tomb));
+    }
 }

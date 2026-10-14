@@ -78,6 +78,13 @@ public class Delivery {
     @Column(name = "prev_hash", length = 64)
     private String prevHash;
 
+    // The seal's position in the chain, assigned from the locked head pointer.
+    // Wall-clock timestamps tie, and a tie ordered arbitrarily reads as a
+    // reorder; the sequence never ties, so chain order is exact. Filled by the
+    // backfill for pre-chain rows.
+    @Column(name = "seal_seq")
+    private Long sealSeq;
+
     // Voie A — handover-code factor. Set only when DELIVERED is sealed with a
     // verified code; never cleared, so the proof keeps which factors it had.
     // Nullable Boolean on purpose: ddl-auto:update adds the column with NULL
@@ -168,6 +175,8 @@ public class Delivery {
     public void setProofHash(String proofHash) { this.proofHash = proofHash; }
     public String getPrevHash() { return prevHash; }
     public void setPrevHash(String prevHash) { this.prevHash = prevHash; }
+    public Long getSealSeq() { return sealSeq; }
+    public void setSealSeq(Long sealSeq) { this.sealSeq = sealSeq; }
     public boolean isCodeVerified() { return Boolean.TRUE.equals(codeVerified); }
     public void setCodeVerified(boolean codeVerified) { this.codeVerified = codeVerified; }
     public LocalDateTime getCodeVerifiedAt() { return codeVerifiedAt; }

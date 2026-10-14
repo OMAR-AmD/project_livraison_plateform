@@ -326,7 +326,7 @@ public class DeliveryProofService {
     }
 
     /** The result of walking the whole sealed log in order. */
-    public record ChainVerification(boolean ok, int sealed, UUID brokenAt, String reason) {
+    public record ChainVerification(boolean ok, int sealed, int tombstones, UUID brokenAt, String reason) {
     }
 
     /**
@@ -345,22 +345,68 @@ public class DeliveryProofService {
         for (ChainedSeal row : seals) {
             if (first) {
                 if (row.prevHash() != null && !CHAIN_GENESIS.equals(row.prevHash())) {
-                    return new ChainVerification(false, seals.size(), row.deliveryId(),
+                    return new ChainVerification(false, seals.size(), 0, row.deliveryId(),
                             "the first sealed delivery does not start the chain");
                 }
                 first = false;
             } else if (row.prevHash() == null || !row.prevHash().equals(previous)) {
-                return new ChainVerification(false, seals.size(), row.deliveryId(),
+                return new ChainVerification(false, seals.size(), 0, row.deliveryId(),
                         "the link does not point at the previous seal");
             }
             if (row.checkable() && !matchesSeal(row.deliveryId(), row.courierId(),
                     row.clientId(), row.lat(), row.lng(), row.timestamp(),
                     row.prevHash(), row.seal())) {
-                return new ChainVerification(false, seals.size(), row.deliveryId(),
+                return new ChainVerification(false, seals.size(), 0, row.deliveryId(),
                         "the seal does not match its fields");
             }
             previous = row.seal();
         }
-        return new ChainVerification(true, seals.size(), null, null);
+        return new ChainVerification(true, seals.size(), 0, null, null);
+    }
+
+    // ---------------------------------------------------------------
+    // Tombstones: signed deletion records.
+    //
+    // Deleting a sealed row tears its successor's link, so the choice is
+    // between refusing the delete and evidencing it. Refusing breaks the
+    // rehearsal cleanups and the client's delete-history button, which delete
+    // sealed rows legitimately. So the service records what it removes: a full
+    // copy of the seal data at its original sequence number, plus when and by
+    // whom — all under its own HMAC. The walk then verifies the tombstone's
+    // seal and the copied delivery seal exactly as if the row were still
+    // there. A row removed behind the service's back leaves no tombstone, and
+    // forging one needs the proof key: both still break the chain.
+    // ---------------------------------------------------------------
+
+    /** Payload tag for deletion records. Deleted rows keep their v1/v2 seals;
+     * the tombstone's own seal covers the deletion itself. */
+    private static final String TOMBSTONE_PAYLOAD_VERSION = "v-tomb";
+
+    /** Seals the fact of a deletion: which seal, at which chain position, when,
+     * by whom. Timestamps are canonicalised like delivery seals. */
+    public String tombstoneSeal(UUID deliveryId, long seq, String proofHash, String prevHash,
+                                LocalDateTime deletedAt, String actor) {
+        String payload = String.join("|",
+                TOMBSTONE_PAYLOAD_VERSION,
+                deliveryId.toString(),
+                Long.toString(seq),
+                proofHash,
+                prevHash == null ? CHAIN_GENESIS : prevHash,
+                canonicalTimestamp(deletedAt).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                actor == null ? "unknown" : actor);
+        return hmacHex(payload);
+    }
+
+    /** Recomputes a tombstone seal in constant time; nulls never verify. */
+    public boolean verifyTombstone(UUID deliveryId, Long seq, String proofHash, String prevHash,
+                                   LocalDateTime deletedAt, String actor, String expectedSeal) {
+        if (deliveryId == null || seq == null || proofHash == null
+                || deletedAt == null || expectedSeal == null) {
+            return false;
+        }
+        String recomputed = tombstoneSeal(deliveryId, seq, proofHash, prevHash, deletedAt, actor);
+        return MessageDigest.isEqual(
+                recomputed.getBytes(StandardCharsets.UTF_8),
+                expectedSeal.getBytes(StandardCharsets.UTF_8));
     }
 }

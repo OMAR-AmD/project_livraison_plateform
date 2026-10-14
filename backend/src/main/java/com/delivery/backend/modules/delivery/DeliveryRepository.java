@@ -16,13 +16,14 @@ public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
     /**
      * Every sealed row in chain order. The chain is global — one log for the
      * platform, so there is exactly one head for December's anchor — ordered by
-     * when the seal was made, with the id breaking ties between seals made in
-     * the same microsecond.
+     * the monotonic seal sequence, with the id breaking ties. (Postgres sorts
+     * nulls last ascending, so a row somehow missing its sequence still sorts
+     * deterministically instead of erroring.)
      */
     List<Delivery> findByProofHashNotNullOrderByDeliveredAtAscIdAsc();
 
-    /** The current chain head: the seal the next delivery will link against. */
-    java.util.Optional<Delivery> findFirstByProofHashNotNullOrderByDeliveredAtDescIdDesc();
+    /** Chain walk order: the seal sequence, which never ties. */
+    List<Delivery> findByProofHashNotNullOrderBySealSeqAscIdAsc();
 
     long countByStatus(DeliveryStatus status);
     

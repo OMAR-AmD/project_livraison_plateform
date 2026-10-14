@@ -52,8 +52,10 @@ public class DeliveryService {
     private final FraudTrailStore fraudTrailStore;
     private final DeliveryProofService proofService;
     private final HandoverCodeRateLimiter handoverCodeRateLimiter;
+    private final SealChainHeadRepository sealChainHeadRepository;
+    private final SealTombstoneRepository sealTombstoneRepository;
 
-    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore, DeliveryProofService proofService, HandoverCodeRateLimiter handoverCodeRateLimiter) {
+    public DeliveryService(DeliveryRepository deliveryRepository, UserRepository userRepository, NotificationService notificationService, RedisTemplate<String, String> redisTemplate, SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper, RouteOptimizationService routeOptimizationService, PricingService pricingService, TrajectoryFraudService trajectoryFraudService, FraudTrailStore fraudTrailStore, DeliveryProofService proofService, HandoverCodeRateLimiter handoverCodeRateLimiter, SealChainHeadRepository sealChainHeadRepository, SealTombstoneRepository sealTombstoneRepository) {
         this.deliveryRepository = deliveryRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
@@ -66,6 +68,8 @@ public class DeliveryService {
         this.fraudTrailStore = fraudTrailStore;
         this.proofService = proofService;
         this.handoverCodeRateLimiter = handoverCodeRateLimiter;
+        this.sealChainHeadRepository = sealChainHeadRepository;
+        this.sealTombstoneRepository = sealTombstoneRepository;
     }
 
     public void updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
@@ -268,15 +272,32 @@ public class DeliveryService {
      *
      * <p>Every sealed delivery verifies on its own; this is the check that the
      * log itself is intact — that no sealed row was deleted, reordered or
-     * relinked since. Reports the first row that no longer follows, so an
-     * admin sees where the log breaks rather than just that it does.
+     * relinked since. Recorded deletions (tombstones) are walked in place of
+     * their rows at their original sequence numbers, so a deletion made
+     * through the service keeps the chain green while one made behind its back
+     * breaks it at the successor. Reports the first row that no longer follows,
+     * so an admin sees where the log breaks rather than just that it does.
      */
     @Transactional(readOnly = true)
     public DeliveryProofService.ChainVerification verifySealChain() {
-        List<DeliveryProofService.ChainedSeal> rows = deliveryRepository
-                .findByProofHashNotNullOrderByDeliveredAtAscIdAsc()
-                .stream()
-                .map(delivery -> new DeliveryProofService.ChainedSeal(
+        List<Delivery> live = deliveryRepository.findByProofHashNotNullOrderBySealSeqAscIdAsc();
+        List<SealTombstone> tombs = sealTombstoneRepository.findAllByOrderBySealSeqAsc();
+
+        // Merge the two ordered lists by sequence number. Sequences are unique
+        // per seal — the locked head counter guarantees it — so the merge is a
+        // plain interleave; anything missing a sequence sorts last, still
+        // deterministically.
+        List<DeliveryProofService.ChainedSeal> merged = new java.util.ArrayList<>(live.size() + tombs.size());
+        int li = 0;
+        int ti = 0;
+        while (li < live.size() || ti < tombs.size()) {
+            long liveSeq = li < live.size() && live.get(li).getSealSeq() != null
+                    ? live.get(li).getSealSeq() : Long.MAX_VALUE;
+            long tombSeq = ti < tombs.size() && tombs.get(ti).getSealSeq() != null
+                    ? tombs.get(ti).getSealSeq() : Long.MAX_VALUE;
+            if (ti >= tombs.size() || (li < live.size() && liveSeq <= tombSeq)) {
+                Delivery delivery = live.get(li++);
+                merged.add(new DeliveryProofService.ChainedSeal(
                         delivery.getId(),
                         delivery.getCourier() == null ? null : delivery.getCourier().getId(),
                         delivery.getClient() == null ? null : delivery.getClient().getId(),
@@ -284,9 +305,25 @@ public class DeliveryService {
                         delivery.getDeliveredLng(),
                         delivery.getDeliveredAt(),
                         delivery.getPrevHash(),
-                        delivery.getProofHash()))
-                .toList();
-        return proofService.verifyChain(rows);
+                        delivery.getProofHash()));
+            } else {
+                SealTombstone tomb = tombs.get(ti++);
+                if (!proofService.verifyTombstone(tomb.getDeliveryId(), tomb.getSealSeq(),
+                        tomb.getProofHash(), tomb.getPrevHash(), tomb.getDeletedAt(),
+                        tomb.getDeletedBy(), tomb.getTombSeal())) {
+                    return new DeliveryProofService.ChainVerification(false,
+                            live.size() + tombs.size(), ti, tomb.getDeliveryId(),
+                            "a recorded deletion fails its own seal");
+                }
+                merged.add(new DeliveryProofService.ChainedSeal(
+                        tomb.getDeliveryId(), tomb.getCourierId(), tomb.getClientId(),
+                        tomb.getDeliveredLat(), tomb.getDeliveredLng(), tomb.getDeliveredAt(),
+                        tomb.getPrevHash(), tomb.getProofHash()));
+            }
+        }
+        DeliveryProofService.ChainVerification walked = proofService.verifyChain(merged);
+        return new DeliveryProofService.ChainVerification(
+                walked.ok(), walked.sealed(), tombs.size(), walked.brokenAt(), walked.reason());
     }
 
     /**
@@ -648,6 +685,16 @@ public class DeliveryService {
             throw new IllegalArgumentException("This delivery has no courier to remove");
         }
 
+        if (delivery.getProofHash() != null) {
+            // A sealed delivery is terminal evidence. Unassigning it would
+            // orphan the sealed identity and strand the row: neither the old
+            // seal (bound to the removed courier) nor a new one (seals are
+            // written once) could ever verify. Disputes go through deletion,
+            // which leaves a tombstone — not through unassignment.
+            throw new IllegalArgumentException(
+                    "Sealed deliveries cannot be unassigned: the proof names its courier");
+        }
+
         User previousCourier = delivery.getCourier();
         log.warn("Admin unassigned delivery {} from {} (was {}).",
                 deliveryId, previousCourier.getEmail(), delivery.getStatus());
@@ -752,6 +799,13 @@ public class DeliveryService {
 
     private void sealDeliveryProof(Delivery delivery, Double proofLat, Double proofLng,
                                     String handoverCode, User courier) {
+        if (delivery.getProofHash() != null) {
+            // Seals are written once. Re-sealing would move the row to a new
+            // chain position while its old successor still points at the old
+            // seal — a self-inflicted break. A sealed delivery is terminal.
+            throw new IllegalArgumentException(
+                    "Delivery already sealed: a sealed proof cannot be rewritten");
+        }
         boolean codeOk = false;
         if (handoverCode != null && !handoverCode.isBlank()) {
             // Check the allowance before comparing. A blocked guesser is refused
@@ -813,14 +867,17 @@ public class DeliveryService {
         // different payload and report an honest delivery as tampered with.
         //
         // The seal is chained: it commits to the previously sealed delivery, so
-        // the log itself becomes tamper-evident and not just each row. Two seals
-        // made at the same instant can read the same head and fork; that is not
-        // prevented here, it is detected — verifyChain reports the fork as the
-        // first row that no longer follows.
-        String prevHash = deliveryRepository
-                .findFirstByProofHashNotNullOrderByDeliveredAtDescIdDesc()
-                .map(Delivery::getProofHash)
-                .orElse(DeliveryProofService.CHAIN_GENESIS);
+        // the log itself becomes tamper-evident and not just each row. The head
+        // row is locked for this transaction, so two seals made at the same
+        // instant line up instead of forking: the second sealer waits, then
+        // reads the first sealer's seal. The sequence numbers the seal for the
+        // same reason — wall-clock ties must not read as reorders.
+        SealChainHead head = sealChainHeadRepository.lockHead()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Seal chain head is missing: refusing to seal outside the chain"));
+        String prevHash = head.getHeadHash() == null
+                ? DeliveryProofService.CHAIN_GENESIS : head.getHeadHash();
+        long seq = head.getLastSeq() + 1;
         DeliveryProofService.Seal seal = proofService.sealChained(
                 delivery.getId(), courier.getId(), delivery.getClient().getId(), lat, lng,
                 LocalDateTime.now(), prevHash);
@@ -831,6 +888,10 @@ public class DeliveryService {
         delivery.setProofDistanceM(distanceM);
         delivery.setProofHash(seal.hash());
         delivery.setPrevHash(prevHash);
+        delivery.setSealSeq(seq);
+        head.setHeadHash(seal.hash());
+        head.setLastSeq(seq);
+        sealChainHeadRepository.save(head);
         if (codeOk) {
             delivery.setCodeVerified(true);
             delivery.setCodeVerifiedAt(LocalDateTime.now());
@@ -871,12 +932,19 @@ public class DeliveryService {
      * restriction applies: an administrator may remove a delivery in any state
      * (PENDING, ASSIGNED, IN_TRANSIT included). Callers are expected to have
      * verified the ADMIN role — this controller mapping is admin-only.
+     *
+     * <p>Removing a sealed row tears its successor's link, so a sealed delete
+     * leaves a signed tombstone first: the row disappears as requested, but
+     * the deletion itself becomes evidence and the chain keeps verifying.
      */
     @Transactional
     public void deleteDelivery(UUID deliveryId) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
+        if (delivery.getProofHash() != null) {
+            entomb(delivery, "admin");
+        }
         log.warn("Admin force-deleted delivery {} (was {}, {}).",
                 deliveryId, delivery.getStatus(), delivery.getPaymentStatus());
         deliveryRepository.delete(delivery);
@@ -895,7 +963,41 @@ public class DeliveryService {
             throw new IllegalArgumentException("Only delivered or cancelled deliveries can be deleted");
         }
 
+        if (delivery.getProofHash() != null) {
+            entomb(delivery, client.getEmail());
+        }
         deliveryRepository.delete(delivery);
+    }
+
+    /**
+     * Records a sealed delivery's deletion as signed evidence before its row
+     * disappears. The tombstone keeps a full copy of the seal at its original
+     * chain position, so the walk verifies straight through it; without this,
+     * every legitimate cleanup would read as an attack on the log.
+     */
+    private void entomb(Delivery delivery, String actor) {
+        if (delivery.getSealSeq() == null) {
+            throw new IllegalStateException(
+                    "Cannot record the deletion of a sealed delivery with no chain sequence");
+        }
+        LocalDateTime deletedAt = DeliveryProofService.canonicalTimestamp(LocalDateTime.now());
+        SealTombstone tomb = new SealTombstone();
+        tomb.setDeliveryId(delivery.getId());
+        tomb.setCourierId(delivery.getCourier() == null ? null : delivery.getCourier().getId());
+        tomb.setClientId(delivery.getClient() == null ? null : delivery.getClient().getId());
+        tomb.setDeliveredLat(delivery.getDeliveredLat());
+        tomb.setDeliveredLng(delivery.getDeliveredLng());
+        tomb.setDeliveredAt(delivery.getDeliveredAt());
+        tomb.setProofHash(delivery.getProofHash());
+        tomb.setPrevHash(delivery.getPrevHash());
+        tomb.setSealSeq(delivery.getSealSeq());
+        tomb.setDeletedAt(deletedAt);
+        tomb.setDeletedBy(actor);
+        tomb.setTombSeal(proofService.tombstoneSeal(delivery.getId(), delivery.getSealSeq(),
+                delivery.getProofHash(), delivery.getPrevHash(), deletedAt, actor));
+        sealTombstoneRepository.save(tomb);
+        log.warn("Sealed delivery {} deleted by {}: tombstone recorded at chain position {}.",
+                delivery.getId(), actor, delivery.getSealSeq());
     }
 
     @Transactional

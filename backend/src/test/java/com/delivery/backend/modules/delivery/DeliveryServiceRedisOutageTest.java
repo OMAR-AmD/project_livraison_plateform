@@ -59,7 +59,9 @@ class DeliveryServiceRedisOutageTest {
                 mock(TrajectoryFraudService.class),
                 mock(FraudTrailStore.class),
                 mock(DeliveryProofService.class),
-                mock(HandoverCodeRateLimiter.class));
+                mock(HandoverCodeRateLimiter.class),
+                mock(SealChainHeadRepository.class),
+                mock(SealTombstoneRepository.class));
     }
 
     @Test

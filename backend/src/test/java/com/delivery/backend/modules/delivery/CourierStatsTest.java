@@ -37,7 +37,7 @@ class CourierStatsTest {
         // getCourierStats, so nulls are safe and keep the test free of Spring.
         // A null handover-code limiter is fine here too: this test never reaches
         // the delivery-confirmation path that would use it.
-        return new DeliveryService(repository, null, null, null, null, null, null, null, null, null, null, null);
+        return new DeliveryService(repository, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private Delivery delivery(DeliveryStatus status, Integer rating) {

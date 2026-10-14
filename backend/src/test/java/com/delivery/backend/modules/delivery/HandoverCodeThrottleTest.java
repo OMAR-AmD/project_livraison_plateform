@@ -86,7 +86,9 @@ class HandoverCodeThrottleTest {
                 mock(TrajectoryFraudService.class),
                 mock(FraudTrailStore.class),
                 proofService,
-                limiter);
+                limiter,
+                mock(SealChainHeadRepository.class),
+                mock(SealTombstoneRepository.class));
     }
 
     private void confirmWithWrongCode() {
