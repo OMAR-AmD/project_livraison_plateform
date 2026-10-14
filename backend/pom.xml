@@ -182,6 +182,9 @@
 						<param>com.delivery.backend.modules.delivery.HandoverCodeRateLimiter</param>
 						<param>com.delivery.backend.modules.delivery.RedisHandoverAttemptStore</param>
 						<param>com.delivery.backend.modules.delivery.InMemoryHandoverAttemptStore</param>
+						<param>com.delivery.backend.modules.delivery.DeliveryProofService</param>
+						<param>com.delivery.backend.modules.delivery.DeliveryService</param>
+						<param>com.delivery.backend.modules.delivery.SealChainBackfill</param>
 					</targetClasses>
 					<targetTests>
 						<param>com.delivery.backend.modules.delivery.HandoverCodeRateLimiterTest</param>
@@ -190,6 +193,13 @@
 						<param>com.delivery.backend.modules.delivery.RedisHandoverAttemptStoreTest</param>
 						<param>com.delivery.backend.modules.delivery.InMemoryHandoverAttemptStoreTest</param>
 						<param>com.delivery.backend.modules.delivery.HandoverThrottleRedisIntegrationTest</param>
+						<param>com.delivery.backend.modules.delivery.DeliveryProofServiceTest</param>
+						<param>com.delivery.backend.modules.delivery.HandoverCodeTest</param>
+						<param>com.delivery.backend.modules.delivery.SealChainTest</param>
+						<param>com.delivery.backend.modules.delivery.SealChainWiringTest</param>
+						<param>com.delivery.backend.modules.delivery.SealChainBackfillTest</param>
+						<param>com.delivery.backend.modules.delivery.DeliveryServiceRedisOutageTest</param>
+						<param>com.delivery.backend.modules.delivery.CourierStatsTest</param>
 					</targetTests>
 					<outputFormats>
 						<param>HTML</param>

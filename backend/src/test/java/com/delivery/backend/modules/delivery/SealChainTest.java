@@ -93,10 +93,25 @@ class SealChainTest {
         Seal v2 = proofs.sealChained(D1, COURIER, CLIENT, LAT, LNG, T1, "prev");
         assertTrue(proofs.matchesSeal(D1, COURIER, CLIENT, LAT, LNG, T1, "prev", v2.hash()));
         assertFalse(proofs.matchesSeal(D1, COURIER, CLIENT, LAT, LNG, T1, "other", v2.hash()));
+        assertFalse(proofs.matchesSeal(D1, COURIER, CLIENT, LAT, LNG, T1, null, "0".repeat(64)),
+                "a linkless row still has to match its own seal");
         assertFalse(proofs.matchesSeal(D1, COURIER, CLIENT, LAT, LNG, T1, "prev", "0".repeat(64)));
         assertFalse(proofs.matchesSeal(D1, COURIER, CLIENT, LAT, LNG, T1, "prev", null));
+        assertFalse(proofs.verifyChained(D1, COURIER, CLIENT, LAT, LNG, T1, "prev", null),
+                "a missing seal never verifies, chained or not");
         assertFalse(proofs.matchesSeal(D1, null, CLIENT, LAT, LNG, T1, "prev", v2.hash()),
                 "a missing identity never matches instead of throwing");
+    }
+
+    @Test
+    @DisplayName("a lone pre-chain seal verifies: null starts the chain exactly once")
+    void aLonePreChainSealVerifies() {
+        Seal v1 = proofs.seal(D1, COURIER, CLIENT, LAT, LNG, T1);
+        ChainedSeal lone = new ChainedSeal(D1, COURIER, CLIENT, LAT, LNG, T1, null, v1.hash());
+
+        ChainVerification result = proofs.verifyChain(List.of(lone));
+        assertTrue(result.ok(), "the first row may carry no link; only later rows must");
+        assertEquals(1, result.sealed());
     }
 
     @Test

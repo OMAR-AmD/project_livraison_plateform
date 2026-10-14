@@ -202,6 +202,16 @@ class DeliveryProofServiceTest {
                         "expected about 1001 m, measured " + Math.round(oneKm)),
                 // Symmetry: the distance is the same in both directions.
                 () -> assertEquals(oneKm, svc.haversineMeters(48.8656, 2.3522, 48.8566, 2.3522),
-                        0.001));
+                        0.001),
+                // Diagonal: 0.009 degrees of longitude is ~659 m here, so the
+                // combined distance is ~1198 m. Every assertion above moves only
+                // in latitude, which leaves sin(dLng/2) at exactly zero — and a
+                // zero factor hides any mutation inside the second haversine
+                // term. This one does not.
+                () -> {
+                    double diagonal = svc.haversineMeters(48.8566, 2.3522, 48.8656, 2.3612);
+                    assertTrue(diagonal > 1188 && diagonal < 1208,
+                            "expected about 1198 m, measured " + Math.round(diagonal));
+                });
     }
 }
