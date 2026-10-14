@@ -59,6 +59,7 @@ class InfrastructureWiringTest {
     private static final Path REPO_ROOT = repoRoot();
     private static final Path APPLICATION_YML = REPO_ROOT.resolve("backend/src/main/resources/application.yml");
     private static final Path COMPOSE_YML = REPO_ROOT.resolve("docker-compose.yml");
+    private static final Path ENV_EXAMPLE = REPO_ROOT.resolve(".env.example");
 
     // ------------------------------------------------------------------ tests
 
@@ -144,6 +145,23 @@ class InfrastructureWiringTest {
         assertTrue(composeEnv.contains("DB_HOST") && composeEnv.contains("REDIS_HOST")
                         && composeEnv.contains("OSRM_BASE_URL"),
                 "the backend service should set the three infrastructure hosts; found " + composeEnv);
+    }
+
+    @Test
+    @DisplayName("no committed config file carries the well-known password")
+    void noCommittedConfigCarriesTheWellKnownPassword() throws IOException {
+        // password123 used to be the database password in application.yml, in
+        // docker-compose.yml, and in .env.example — and it is still every demo
+        // account's password. The demo accounts are public by design (DEMO.md
+        // lists them); connection secrets are not, so no committed
+        // configuration file may contain one. Comments are stripped first: the
+        // paragraphs explaining this exact rule mention the value by name.
+        for (Path file : List.of(APPLICATION_YML, COMPOSE_YML, ENV_EXAMPLE)) {
+            String code = stripComments(Files.readString(file, StandardCharsets.UTF_8));
+            assertFalse(code.contains("password123"),
+                    file.getFileName() + " contains the well-known password outside a comment: "
+                            + "connection secrets must come from the environment, never from a committed file");
+        }
     }
 
     // ----------------------------------------------------------------- helpers

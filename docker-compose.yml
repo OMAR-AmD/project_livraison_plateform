@@ -25,7 +25,10 @@ services:
     restart: always
     environment:
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password123
+      # Single source of truth: the same .env value the backend authenticates
+      # with, so the two can never disagree and the password lives in exactly
+      # one uncommitted place.
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}"
       POSTGRES_DB: delivery_db
     ports:
       - "5432:5432"
@@ -106,7 +109,12 @@ services:
       # that "works" locally can still fail to connect in a stack.
       DB_NAME: delivery_db
       DB_USERNAME: admin
-      DB_PASSWORD: password123
+      # Required, like JWT_SECRET_KEY below: no literal here, the value comes
+      # from .env, and the stack refuses to start without it naming the variable.
+      # It is also what the Postgres container above is created with, so the two
+      # sides share one uncommitted source of truth instead of two literals that
+      # can silently disagree.
+      DB_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}"
       # The host has to be set explicitly. This one was not obvious: the Spring
       # config kept `localhost` hardcoded in the JDBC URL, so the container spent
       # its startup retrying a Postgres on its own loopback address -- healthy,

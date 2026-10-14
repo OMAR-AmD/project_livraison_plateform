@@ -151,16 +151,21 @@
 				<configuration>
 					<environmentVariables>
 						<JWT_SECRET_KEY>test-only-signing-key-not-used-in-any-deployment-0123456789</JWT_SECRET_KEY>
+						<!-- The test Postgres runs with this password (see the
+							compose file), so the suite authenticates with it.
+							Test-only, like the key above: deployments get both
+							values from their own environment, never from here. -->
+						<DB_PASSWORD>password123</DB_PASSWORD>
 					</environmentVariables>
 				</configuration>
 			</plugin>
 			<!--
 				Mutation testing, wired but kept out of `mvn test`: it is minutes,
 				not seconds, so it runs on demand with `./mvnw pitest:mutationCoverage`.
-				It targets the throttle classes specifically because that is where a
-				surviving mutant is a security hole: a flipped `>=`, a dropped
-				EXPIRE, or a skipped clear would each weaken the brute-force defence
-				while the ordinary tests stayed green.
+				It targets the throttle and seal-chain classes specifically because
+				that is where a surviving mutant is a security hole: a flipped `>=`,
+				a dropped EXPIRE, a skipped clear, or an unlinked seal would each
+				weaken a defence while the ordinary tests stayed green.
 
 				PIT needs the JUnit 5 driver as a plugin dependency. Without it the
 				JUnit Platform tests are invisible to PIT and every mutant "survives"
