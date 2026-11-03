@@ -8,6 +8,8 @@
 > **Branche :** `main`
 > **Dernier commit avant cette session :** `659e736`
 > **But de ce fichier :** reprendre le travail dans une nouvelle conversation sans perdre le contexte, les décisions, les chiffres et les limites.
+>
+> **Mise à jour — clôture du Sprint 1 (3 novembre 2026) :** #1 et #2 sont `Done` ; #5 n'est pas terminé (`0/150`) et est replanifié au Sprint 2. Voir `SPRINT_1_REVIEW.md` et `SPRINT_1_BACKLOG.md`.
 
 ---
 

@@ -2,8 +2,8 @@
 
 > Projet : **SwiftDeliver**
 > But du Sprint 1 : sécuriser la remise, rendre la preuve de livraison vérifiable, puis préparer la collecte de données terrain.
-> Statut global : **#1 et #2 terminés dans le code ; #5 en cours (0/150 runs réels).**
-> Ce fichier est la version locale à transférer dans GitHub Projects quand la connexion sera rétablie.
+> Statut global : **Sprint 1 clôturé le 3 novembre 2026. #1 et #2 sont Done ; #5 n'est pas terminé (0/150) et est replanifié au Sprint 2.**
+> Ce fichier reste la référence locale ; le board GitHub doit refléter ce statut (voir la section « Décision de clôture »).
 
 ---
 
@@ -14,6 +14,7 @@
 - `[~]` en cours
 - `Done` = code + test + preuve de commit
 - `In Progress` = travail commencé, critère d'acceptation non atteint
+- `Todo (Sprint 2)` = retiré du Sprint 1, replanifié au Sprint 2
 
 ---
 
@@ -106,10 +107,10 @@ La suppression de la **queue** de chaîne reste le gap connu : une chaîne plus 
 
 ## Ticket #5 — Collecte terrain passive
 
-**Titre GitHub :** `[Sprint 1] Field collection (passive)`
-**Statut :** `In Progress` — **0/150 runs réels labellisés**
+**Titre GitHub :** `[Sprint 2] Field collection (passive)` (ancien titre : `[Sprint 1] Field collection (passive)`)
+**Statut :** `Todo (Sprint 2)` — **0/150 runs réels labellisés** (voir « Décision de clôture »)
 **Priorité :** haute
-**Labels :** `ml`, `data`, `field`, `sprint-1`
+**Labels :** `ml`, `data`, `field`, `sprint-2`
 **Dépendance :** #2 (traces et preuves fiables)
 
 ### Objectif
@@ -136,9 +137,11 @@ Sortir des données synthétiques. Collecter passivement des traces GPS réelles
 - [ ] Le taux de faux positifs par run honnête est mesuré et documenté.
 - [ ] Aucun run réel n'est utilisé sans consentement et sans politique de rétention.
 
-### Pourquoi c'est le vrai ticket de Sprint 1
+### Pourquoi #5 ne pouvait pas être terminé dans ce sprint
 
 Le modèle actuel est entraîné sur des données **synthétiques**. Le holdout bruité donne des chiffres honnêtes, mais il ne remplace pas 150 runs réels. Tant que #5 est à `0/150`, la performance terrain reste une hypothèse, pas une preuve.
+
+#5 demande du temps terrain (collecte, consentement, labellisation, réentraînement), pas seulement du code. Il est donc replanifié au Sprint 2, découpé en **#5a** (pipeline de collecte) et **#5b** (150 runs + modèle v2).
 
 ---
 
@@ -161,19 +164,20 @@ Ces sujets sont importants, mais ils ne doivent pas diluer le sprint :
 |---|---|
 | Title | Titre du ticket |
 | Description | Objectif + contexte + limite |
-| Status | `Done` / `In Progress` / `Todo` |
-| Labels | `security`, `backend`, `ml`, `sprint-1` |
+| Status | `Done` / `In Progress` / `Todo (Sprint 2)` |
+| Labels | `security`, `backend`, `ml`, `sprint-1`, `sprint-2` |
 | Estimate | 1 à 5 points |
 | Acceptance criteria | Cases à cocher ci-dessus |
 | Evidence | Commit, test, capture ou sortie terminal |
 
 ### Ordre de transfert conseillé
 
-1. Créer les trois items avec le titre exact.
+1. Créer les trois items avec le titre indiqué.
 2. Coller les sous-tâches dans la description.
-3. Mettre #1 et #2 en `Done` avec les hashes de commit.
-4. Mettre #5 en `In Progress` avec `0/150`.
-5. Ajouter un commentaire sur #5 : « données synthétiques uniquement pour l'instant ; collecte réelle à démarrer ».
+3. Vérifier #1 et #2 en `Done` avec les hashes de commit (les issues sont déjà fermées sur GitHub).
+4. Mettre #5 en `Todo (Sprint 2)` avec `0/150` — ne pas le marquer `Done`.
+5. Ajouter un commentaire sur #5 : « Sprint 1 clôturé ; collecte réelle replanifiée au Sprint 2 (0/150) ».
+6. Fermer l'itération Sprint 1 après avoir sorti #5.
 
 ---
 
@@ -183,6 +187,24 @@ Ces sujets sont importants, mais ils ne doivent pas diluer le sprint :
 |---|---|---|
 | #1 Attempt caps | Done | `0c6620d`, tests du limiteur |
 | #2 Seal chaining | Done | `563eaee`, `c67303e`, `verify_chain.js` |
-| #5 Field collection | In Progress | `0/150` runs réels, modèle encore synthétique |
+| #5 Field collection | Replanifié Sprint 2 | `0/150` runs réels, modèle encore synthétique |
 
-**Phrase honnête :** « Le board peut encore afficher #1 et #2 en cours, mais le code et les tests sont déjà là. Le seul ticket réellement ouvert est #5, et il l'est pour une bonne raison : nous n'avons pas encore 150 runs terrain. »
+**Phrase honnête :** « Le Sprint 1 est clôturé : #1 et #2 sont livrés et prouvés. #5 n'est pas terminé — 0/150 runs réels — et il est replanifié au Sprint 2, parce que la collecte terrain est un travail de données, pas un livrable de code. »
+
+---
+
+## Décision de clôture — Sprint 1 (3 novembre 2026)
+
+- **#1 Attempt caps on handover codes** : `Done` — commit `0c6620d`.
+- **#2 Seal chaining + `verifyChain()`** : `Done` — commits `563eaee`, `c67303e`.
+- **#5 Field collection** : non terminé — `0/150`. **Replanifié au Sprint 2.**
+- **Sprint 1** : clôturé. Les issues GitHub #1 et #2 sont déjà fermées ; il reste à mettre à jour l'itération Projects (#1/#2 en `Done`, #5 en `Todo (Sprint 2)`) puis à fermer l'itération Sprint 1.
+- **Pourquoi** : #5 exige 150 runs réels labellisés ; c'est un travail de collecte terrain et de réentraînement, pas un livrable de code. Le sprint goal parlait de « préparer la collecte » ; cette préparation devient #5a au Sprint 2.
+- **Ce qu'on ne fait pas** : marquer #5 `Done` à 0/150, ou compter des runs simulés comme des runs terrain.
+
+### Replanification Sprint 2
+
+| Ticket | Contenu | Critère de sortie |
+|---|---|---|
+| **#5a — Field collection readiness** | Schéma durable, collecte passive, consentement/rétention, CLI de labellisation, export | Une trace réelle est enregistrée sans bloquer le GPS ; `N/150` est visible |
+| **#5b — 150 runs + modèle v2** | Collecte réelle, labellisation, réentraînement, holdout bruité, calibration | Modèle v2 comparé au modèle synthétique ; faux positifs mesurés |

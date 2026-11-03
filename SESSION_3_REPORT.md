@@ -6,12 +6,15 @@
 > **Repo local :** `plateforme-livraison-feature-ui-fixes-and-revenue-logic`
 > **Branche :** `main`
 > **Dernier commit avant ce rapport :** `659e736 docs: confirm-step, demo password, OSRM fallback, measurements, honest counts`
+> **HEAD au moment de la clôture du Sprint 1 :** `21c0891` + commit de clôture `docs(sprint1): close sprint with #1/#2 done and #5 replanned`
 
 ---
 
 ## 1. Discussion avec le Software Engineer coach
 
 > **À compléter avec tes notes réelles.** Je ne peux pas inventer ce que le coach a dit. Garde des phrases courtes, factuelles, et cite un retour technique précis.
+
+> **Décision de clôture (3 novembre 2026) :** #1 et #2 sont `Done` ; #5 n'est pas terminé (`0/150`) et est replanifié au Sprint 2. Voir la section 6 et `SPRINT_1_REVIEW.md`.
 
 ### Sujet abordé
 
@@ -38,7 +41,7 @@
 ### Action suivante
 
 - [ ] Transférer les trois tickets dans GitHub Projects.
-- [ ] Démarrer la collecte #5 (0/150).
+- [ ] Démarrer le Sprint 2 : pipeline #5a, puis collecte #5b (0/150).
 - [ ] Vérifier l'expiration Render PostgreSQL.
 
 ---
@@ -141,13 +144,15 @@ Fichier local : `SPRINT_1_BACKLOG.md`
 |---|---|---|
 | #1 Attempt caps on handover codes | Done | `0c6620d` |
 | #2 Seal chaining + `verifyChain()` | Done | `563eaee`, `c67303e` |
-| #5 Field collection (passive) | In Progress — 0/150 | aucune donnée réelle labellisée |
+| #5 Field collection (passive) | Replanifié Sprint 2 — 0/150 | aucune donnée réelle labellisée ; voir `SPRINT_1_REVIEW.md` |
 
 Le backlog contient les sous-tâches, les critères d'acceptation, les limites assumées et les champs à recréer dans GitHub Projects.
 
+Les issues GitHub #1 et #2 sont déjà fermées ; #5 est ouverte et doit être déplacée vers le Sprint 2 dans Projects.
+
 ### Phrase pour le rapport
 
-> « Le board GitHub peut encore afficher #1 et #2 en cours, mais les deux sont déjà implémentés et testés dans le code. Le seul ticket réellement ouvert est #5 : la collecte terrain est à 0/150 runs réels. »
+> « Le Sprint 1 est clôturé : #1 et #2 sont implémentés et testés. #5 n'est pas terminé — 0/150 runs réels — et il est replanifié au Sprint 2. Je préfère un ticket honnêtement replanifié à un ticket marqué Done sans données. »
 
 ---
 
@@ -166,6 +171,9 @@ git commit -m "chore(git): ignore local baseline artefacts"
 git add SPRINT_1_BACKLOG.md SESSION_3_REPORT.md CONVERSATION_EXPORT_2026-11-03.md SESSION_3_BASELINE_RUN.txt
 git commit -m "docs(session3): add sprint backlog, baseline report and handoff"
 
+git add SPRINT_1_BACKLOG.md SESSION_3_REPORT.md SPRINT_1_REVIEW.md CONVERSATION_EXPORT_2026-11-03.md SWIFTDELIVER_REPORT.md
+git commit -m "docs(sprint1): close sprint with #1/#2 done and #5 replanned"
+
 git log --oneline --decorate -8
 ```
 
@@ -174,6 +182,8 @@ git log --oneline --decorate -8
 ### Sortie attendue de `git log`
 
 ```text
+<closure> docs(sprint1): close sprint with #1/#2 done and #5 replanned
+21c0891 docs(session3): sync commit hashes in handoff
 f982525 docs(session3): add sprint backlog, baseline report and handoff
 733a8f1 chore(git): ignore local baseline artefacts
 534b8eb test(security): make verify_chain idempotent and align postgres container
@@ -182,7 +192,7 @@ f982525 docs(session3): add sprint backlog, baseline report and handoff
 30f86a6 docs: chain shipped, secrets hardened, laptop-first model, honest counts
 ```
 
-Les hashes ci-dessus sont ceux du dépôt local. Vérifie-les avec `git log --oneline --decorate -8`.
+Le hash `<closure>` est celui du commit de clôture ; les autres sont ceux du dépôt local. Vérifie-les avec `git log --oneline --decorate -8`.
 
 ---
 
@@ -226,27 +236,36 @@ Utile pour prouver que le travail est local et que rien n'a été poussé.
 
 ## 6. Bilan honnête de la session
 
+### Clôture du Sprint 1 (3 novembre 2026)
+
+- **#1** et **#2** sont `Done`.
+- **#5** n'est pas terminé : `0/150` runs réels. Il est replanifié au Sprint 2.
+- **Décision :** ne pas marquer #5 `Done` ; la collecte terrain est un travail de données, pas un livrable de code. Le Sprint 1 est clôturé sur les deux barrières de sécurité.
+- **Artefact de clôture :** `SPRINT_1_REVIEW.md`.
+
 ### Ce qui est fait
 
+- Le Sprint 1 est clôturé : #1 et #2 sont `Done`.
 - Le baseline ML tourne localement, avec un code de sortie 0.
-- Le backlog Sprint 1 est rédigé avec des critères d'acceptation.
+- Le backlog Sprint 1 est rédigé avec des critères d'acceptation et une décision de clôture.
 - Les commits locaux sont prêts (ou faits) sans push.
 - Le rapport contient les preuves nécessaires.
 
 ### Ce qui reste ouvert
 
-- **#5 : 0/150 runs réels.** C'est la limite principale du projet.
+- **#5 : 0/150 runs réels.** C'est la limite principale du projet. Il est replanifié au Sprint 2 (#5a pipeline, #5b collecte + modèle v2).
 - **Render PostgreSQL :** l'échéance gratuite était le **2 novembre 2026**. Nous sommes le **3 novembre 2026** : vérifier immédiatement si la base a expiré, faire un `pg_dump` si elle est encore accessible, et renouveler ou migrer.
-- **Render 502 :** le backend peut être endormi ou en erreur. Vérifier `/api/v1/health` et les logs Render avant la démo.
+- **Backend Render :** au moment de la clôture, le frontend répond `200` mais le backend ne répond pas (timeout/reset ; le proxy `/api/v1/health` du frontend aussi). Cause probable : expiration de la Postgres gratuite le 2 novembre 2026. Vérifier le dashboard et prévoir la stack locale en fallback.
 - **Capture d'écran du coach :** la section 1 doit être remplie avec le retour réel, pas inventé.
 
 ### Prochaine action
 
-1. Remplir la section 1 avec les notes réelles du coach.
-2. Prendre les trois captures.
-3. Coller ce rapport dans le Class Notebook.
-4. Transférer `SPRINT_1_BACKLOG.md` dans GitHub Projects.
-5. Vérifier la base Render avant toute démo.
+1. Mettre l'itération Projects à jour : #1/#2 en `Done` (issues déjà fermées), #5 en `Todo (Sprint 2)`, puis fermer l'itération Sprint 1.
+2. Remplir la section 1 avec les notes réelles du coach.
+3. Prendre les trois captures (terminal, `git log`, backlog).
+4. Coller ce rapport et `SPRINT_1_REVIEW.md` dans le Class Notebook.
+5. Vérifier la base Render et prévoir la stack locale en fallback pour la démo.
+6. Démarrer le Sprint 2 par #5a (pipeline de collecte), puis #5b (150 runs + modèle v2).
 
 ---
 
