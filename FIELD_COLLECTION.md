@@ -227,7 +227,20 @@ Les tests couvrent :
 
 ---
 
-## 10. Ce qui reste pour #5b
+## 10. Preuve de fonctionnement (3 novembre 2026)
+
+- Backend Docker reconstruit avec `FIELD_COLLECTION_ENABLED=true`.
+- Un fix `FIELD` sur une livraison `IN_TRANSIT` a créé **1 `field_run`**
+  et **1 `field_trace_point`** : 8 features, score `0,036`, seuil `0,82`,
+  `source=FIELD`, `consent_version=field-v1`, rétention à 90 jours.
+- Stats : `total_runs=1`, `field_runs=1`, `labeled_field_runs=0`.
+- Labellisation `EXCLUDE` via `scripts/field_collection_label.sql` : le run
+  reste exclu du compteur, donc toujours **0/150**.
+- Les données de test ont été supprimées et la collecte a été remise à
+  `FIELD_COLLECTION_ENABLED=false` pour la démo.
+- Suite backend complète : **197 tests, 0 échec**.
+
+## 11. Ce qui reste pour #5b
 
 - Collecter **150 runs réels** consentis.
 - Labelliser les runs avec la grille ci-dessus.
