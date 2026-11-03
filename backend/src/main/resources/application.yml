@@ -126,3 +126,14 @@ application:
     # literal fallback on purpose: a well-known default would make every proof in
     # the system forgeable, and nothing would look wrong.
     hmac-key: ${PROOF_HMAC_KEY:${JWT_SECRET_KEY}}
+  field-collection:
+    # Sprint 2 / #5a — passive field-data collection. Off by default: a demo
+    # restart must not start writing traces. Enable it only for a consented
+    # field campaign (see FIELD_COLLECTION.md).
+    enabled: ${FIELD_COLLECTION_ENABLED:false}
+    require-consent: ${FIELD_COLLECTION_REQUIRE_CONSENT:true}
+    retention-days: ${FIELD_COLLECTION_RETENTION_DAYS:90}
+    target-runs: ${FIELD_COLLECTION_TARGET_RUNS:150}
+    queue-capacity: ${FIELD_COLLECTION_QUEUE_CAPACITY:1000}
+    consent-version: ${FIELD_COLLECTION_CONSENT_VERSION:field-v1}
+    purge-cron: ${FIELD_COLLECTION_PURGE_CRON:0 0 3 * * *}

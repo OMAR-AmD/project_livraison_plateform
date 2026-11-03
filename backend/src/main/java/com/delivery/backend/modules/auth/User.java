@@ -80,6 +80,16 @@ public class User implements UserDetails {
     @Column(name = "token_version")
     private Long tokenVersion = 0L;
 
+    /**
+     * Consentement explicite à la collecte passive de traces GPS (#5a).
+     *
+     * <p>Nullable pour la même raison que {@code tokenVersion} : la colonne est
+     * ajoutée par {@code ddl-auto:update} à une table déjà peuplée. Une valeur
+     * absente se lit comme un refus, jamais comme un accord.
+     */
+    @Column(name = "field_data_consent", columnDefinition = "boolean default false")
+    private Boolean fieldDataConsent = false;
+
     public User() {}
 
     public User(String email, String password, Role role) {
@@ -163,5 +173,13 @@ public class User implements UserDetails {
     /** Invalidates every token issued to this account so far. */
     public void bumpTokenVersion() {
         this.tokenVersion = getTokenVersion() + 1;
+    }
+
+    public boolean isFieldDataConsent() {
+        return Boolean.TRUE.equals(fieldDataConsent);
+    }
+
+    public void setFieldDataConsent(boolean fieldDataConsent) {
+        this.fieldDataConsent = fieldDataConsent;
     }
 }

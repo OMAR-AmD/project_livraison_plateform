@@ -234,10 +234,10 @@ export async function courierUpdateStatus(id, status, extra = {}) {
   });
 }
 
-export async function courierSendLocation(id, lat, lng) {
+export async function courierSendLocation(id, lat, lng, source = 'FIELD') {
   return apiFetch(`/courier/deliveries/${id}/location`, {
     method: 'PATCH',
-    body: JSON.stringify({ latitude: lat, longitude: lng }),
+    body: JSON.stringify({ latitude: lat, longitude: lng, source }),
   });
 }
 

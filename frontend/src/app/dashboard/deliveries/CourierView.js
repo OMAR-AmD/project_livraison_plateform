@@ -150,7 +150,7 @@ export default function CourierView() {
                 simIndexRef.current = simPath.length;
               }
               onTourDeliveries.forEach(d => {
-                courierSendLocation(d.id, nextPoint.lat, nextPoint.lng)
+                courierSendLocation(d.id, nextPoint.lat, nextPoint.lng, 'SIMULATED')
                   .catch(err => console.warn('Mock Location broadcast failed:', err));
               });
               
@@ -170,7 +170,7 @@ export default function CourierView() {
             ({ coords }) => {
               setCurrentCoords({ lat: coords.latitude, lng: coords.longitude });
               onTourDeliveries.forEach(d => {
-                courierSendLocation(d.id, coords.latitude, coords.longitude)
+                courierSendLocation(d.id, coords.latitude, coords.longitude, 'FIELD')
                   .catch(err => console.warn('Location broadcast failed:', err));
               });
             },

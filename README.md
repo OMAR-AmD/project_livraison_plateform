@@ -397,5 +397,6 @@ trade-off for the single-instance free tier, documented rather than hidden.
 | [`DEPLOY.md`](DEPLOY.md) | Deploying the whole stack to a public cloud on a free tier, and verifying that what came up is what was described |
 | [`scripts/argumentaire_securite_realiste.tex`](scripts/argumentaire_securite_realiste.tex) | The written defence: the rubric baseline, the AI innovation, and an explicit account of what is planned or a known limit, each claim tied to a command that reproduces it |
 | [`scripts/justification_securite.tex`](scripts/justification_securite.tex) | Why the security/Data/AI axis was chosen (written before development); each axis is labelled with what was actually delivered and points back to the argumentaire |
+| [`FIELD_COLLECTION.md`](FIELD_COLLECTION.md) | Activating the opt-in #5a field collection: consent, labeling, retention and the honest 0/150 counter |
 | [`render.yaml`](render.yaml) | The cloud blueprint: both app images, Postgres, and the Redis-compatible cache |
 | [`scripts/prepare-osrm.sh`](scripts/prepare-osrm.sh) | One-command routing data preparation |

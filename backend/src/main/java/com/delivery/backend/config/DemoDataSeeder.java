@@ -141,6 +141,13 @@ public class DemoDataSeeder implements ApplicationRunner {
                 existing.setPassword(passwordEncoder.encode(demoPassword));
                 log.info("Demo account {} password re-synced to the current DEMO_PASSWORD.", email);
             }
+            // Demo couriers are fictional accounts, so the demo can exercise
+            // #5a without a manual SQL opt-in. Real accounts stay opted out by
+            // default and must consent explicitly.
+            if (role == Role.LIVREUR && !existing.isFieldDataConsent()) {
+                existing.setFieldDataConsent(true);
+                log.info("Demo courier {} opted in to passive field collection.", email);
+            }
             return existing;
         }
         User created = user(email, first, last, role);
@@ -154,6 +161,9 @@ public class DemoDataSeeder implements ApplicationRunner {
         u.setLastName(last);
         u.setPhoneNumber("+212 6 00 00 00 00");
         u.setEmailVerified(true);
+        if (role == Role.LIVREUR) {
+            u.setFieldDataConsent(true);
+        }
         return u;
     }
 

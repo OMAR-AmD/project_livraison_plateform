@@ -212,7 +212,10 @@ Broadcasts the courier's position for one delivery. Requires the delivery to be
 assigned to the caller and `IN_TRANSIT`. Writes to Redis with a 30-second TTL
 and pushes to the STOMP topic `/topic/colis/{id}`.
 
-* **Body**: `{ "latitude": 33.5731, "longitude": -7.5898 }`
+* **Body**: `{ "latitude": 33.5731, "longitude": -7.5898, "source": "FIELD" }`
+  `source` is optional and defaults to `FIELD`; the dashboard simulator sends
+  `SIMULATED`, which is stored but never counted toward the 150 field runs.
+  See [`FIELD_COLLECTION.md`](FIELD_COLLECTION.md).
 
 ### `GET /courier/deliveries/optimize?lat=..&lng=..`
 Solves the round for the courier's `ASSIGNED` + `IN_TRANSIT` deliveries.

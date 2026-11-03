@@ -3,11 +3,13 @@ package com.delivery.backend.modules.delivery;
 import com.delivery.backend.modules.auth.User;
 import com.delivery.backend.modules.delivery.dto.DeliveryResponse;
 import com.delivery.backend.modules.delivery.dto.DeliveryStatusUpdateRequest;
+import com.delivery.backend.modules.field.FieldTraceRecorder;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,10 +19,14 @@ public class CourierDeliveryController {
 
     private final DeliveryService deliveryService;
     private final RouteOptimizationService routeOptimizationService;
+    private final FieldTraceRecorder fieldTraceRecorder;
 
-    public CourierDeliveryController(DeliveryService deliveryService, RouteOptimizationService routeOptimizationService) {
+    public CourierDeliveryController(DeliveryService deliveryService,
+                                     RouteOptimizationService routeOptimizationService,
+                                     FieldTraceRecorder fieldTraceRecorder) {
         this.deliveryService = deliveryService;
         this.routeOptimizationService = routeOptimizationService;
+        this.fieldTraceRecorder = fieldTraceRecorder;
     }
 
     @GetMapping
@@ -57,7 +63,15 @@ public class CourierDeliveryController {
             @PathVariable UUID id,
             @Valid @RequestBody com.delivery.backend.modules.delivery.dto.LocationUpdateRequest request,
             @AuthenticationPrincipal User courier) {
-        deliveryService.updateCourierLocation(id, request.getLatitude(), request.getLongitude(), courier);
+        var verdict = deliveryService.updateCourierLocation(
+                id, request.getLatitude(), request.getLongitude(), courier);
+
+        // Opt-in, best-effort field collection (#5a): this never throws and never
+        // delays the response. Only real GPS fixes count toward the 150-run target.
+        fieldTraceRecorder.record(
+                id, courier.getId(), courier.isFieldDataConsent(), request.getSource(),
+                request.getLatitude(), request.getLongitude(), verdict, Instant.now());
+
         return ResponseEntity.ok().build();
     }
 

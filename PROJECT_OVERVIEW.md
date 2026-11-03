@@ -395,10 +395,15 @@ generic `500`, so a mistyped endpoint does not look like a server fault.
 
 ### Entities (JPA)
 - **`User`** — id, email, password (hashed), role, verification fields,
-  `tokenVersion`, profile fields.
+  `tokenVersion`, profile fields, `fieldDataConsent` (opt-in for #5a).
 - **`Delivery`** — id, description, pickup/dropoff addresses + coordinates,
   `status`, `paymentStatus`, price, client, courier, rating, review, proof
   fields (`proof`, `deliveredAt`, delivered lat/lng, distance, `codeVerified`).
+- **`FieldRun`** — one per delivery for the opt-in field dataset: source
+  (`FIELD`, `SIMULATED`, `TEST`), consent version, retention deadline and label.
+- **`FieldTracePoint`** — the eight movement features, score, threshold, model
+  version and a ~50 m coarsened position; written asynchronously, never on the
+  GPS request thread.
 - **`Notification`** — per-user messages with read/unread state.
 
 ### Delivery status (`DeliveryStatus`) — operations

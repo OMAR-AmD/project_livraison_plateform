@@ -136,6 +136,12 @@ services:
       # calls its own localhost:11434 and disables the assistant even when
       # Ollama is running and the models are pulled.
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # #5a field collection. Off unless .env explicitly enables it; a demo
+      # restart must not silently start writing GPS traces.
+      FIELD_COLLECTION_ENABLED: "${FIELD_COLLECTION_ENABLED:-false}"
+      FIELD_COLLECTION_REQUIRE_CONSENT: "${FIELD_COLLECTION_REQUIRE_CONSENT:-true}"
+      FIELD_COLLECTION_RETENTION_DAYS: "${FIELD_COLLECTION_RETENTION_DAYS:-90}"
+      FIELD_COLLECTION_TARGET_RUNS: "${FIELD_COLLECTION_TARGET_RUNS:-150}"
       SPRING_PROFILES_ACTIVE: demo
     ports:
       # Published so a phone on the same network can reach the API during a

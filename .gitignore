@@ -230,6 +230,9 @@ build/
 # and silently disables the FAQ assistant. Do not remove this negation unless
 # init.sql is deleted from docker-compose.yml as well.
 !init.sql
+# ...and the field-collection helper scripts (#5a), which are source code,
+# not local database snapshots.
+!scripts/field_collection_*.sql
 
 # Report files
 reports/

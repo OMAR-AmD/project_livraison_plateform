@@ -72,7 +72,7 @@ public class DeliveryService {
         this.sealTombstoneRepository = sealTombstoneRepository;
     }
 
-    public void updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
+    public TrajectoryFraudService.Verdict updateCourierLocation(UUID deliveryId, Double latitude, Double longitude, User courier) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found"));
 
@@ -97,11 +97,15 @@ public class DeliveryService {
         // AI fraud detection. Runs after the position is published so a detection
         // problem can never block a courier's broadcast -- losing a coordinate is
         // a worse failure than losing an alert, and the two must not share a fate.
+        // The verdict is returned so the controller can persist the exact
+        // features that were scored for the opt-in field dataset (#5a).
+        TrajectoryFraudService.Verdict verdict = null;
         try {
-            scoreForFraud(delivery, latitude, longitude, courier);
+            verdict = scoreForFraud(delivery, latitude, longitude, courier);
         } catch (Exception e) {
             log.warn("fraud scoring failed for delivery {}: {}", deliveryId, e.toString());
         }
+        return verdict;
     }
 
     /**
@@ -112,10 +116,10 @@ public class DeliveryService {
      * decide what a detection failure costs. It must not be allowed to cost a
      * courier their coordinates.
      */
-    private void scoreForFraud(Delivery delivery, Double latitude, Double longitude, User courier) {
+    private TrajectoryFraudService.Verdict scoreForFraud(Delivery delivery, Double latitude, Double longitude, User courier) {
         if (latitude == null || longitude == null
                 || delivery.getDropoffLat() == null || delivery.getDropoffLng() == null) {
-            return;
+            return null;
         }
 
         TrajectoryFraudService.Verdict verdict = trajectoryFraudService.evaluate(
@@ -129,7 +133,7 @@ public class DeliveryService {
         fraudTrailStore.record(delivery.getId(), verdict);
 
         if (!verdict.shouldNotify()) {
-            return;
+            return verdict;
         }
 
         String message = String.format(Locale.ROOT,
@@ -153,6 +157,7 @@ public class DeliveryService {
                     "Your delivery '" + delivery.getDescription()
                             + "' is being verified. Delivery proof is under review.");
         }
+        return verdict;
     }
 
     public com.delivery.backend.modules.delivery.dto.LocationUpdateRequest getCourierLocation(UUID deliveryId) {
