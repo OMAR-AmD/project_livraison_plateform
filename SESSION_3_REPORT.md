@@ -174,7 +174,7 @@ git log --oneline --decorate -8
 ### Sortie attendue de `git log`
 
 ```text
-[hash] docs(session3): add sprint backlog, baseline report and handoff
+f982525 docs(session3): add sprint backlog, baseline report and handoff
 733a8f1 chore(git): ignore local baseline artefacts
 534b8eb test(security): make verify_chain idempotent and align postgres container
 659e736 docs: confirm-step, demo password, OSRM fallback, measurements, honest counts
@@ -182,7 +182,7 @@ git log --oneline --decorate -8
 30f86a6 docs: chain shipped, secrets hardened, laptop-first model, honest counts
 ```
 
-Remplace `[hash]` par les hashes réels après le commit.
+Les hashes ci-dessus sont ceux du dépôt local. Vérifie-les avec `git log --oneline --decorate -8`.
 
 ---
 

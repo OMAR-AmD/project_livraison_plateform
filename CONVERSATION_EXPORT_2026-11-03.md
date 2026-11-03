@@ -268,7 +268,7 @@ prix = max(15, ceil(distanceKm × 5))
 - Commits ajoutés pendant la session :
   - `534b8eb` — `test(security): make verify_chain idempotent and align postgres container`
   - `733a8f1` — `chore(git): ignore local baseline artefacts`
-  - commit docs à venir : backlog + rapport + export.
+  - `f982525` — `docs(session3): add sprint backlog, baseline report and handoff`
 - **Aucun push effectué.**
 - Le workspace racine n'est **pas** un repo Git ; c'est le sous-dossier qui l'est.
 
@@ -322,7 +322,7 @@ Ces artefacts sont **ignorés par Git** via `.gitignore` (commit `733a8f1`). Le 
 |---|---|
 | 1. Baseline exécuté | **Fait** — code de sortie 0 |
 | 2. Backlog Sprint 1 | **Fait** — `SPRINT_1_BACKLOG.md` |
-| 3. Commits locaux | **Fait** — 2 commits + commit docs à venir |
+| 3. Commits locaux | **Fait** — `534b8eb`, `733a8f1`, `f982525` |
 | 4. Rapport Session 3 | **Brouillon prêt** — `SESSION_3_REPORT.md` |
 | Captures d'écran | **À prendre** — commandes dans le rapport |
 | Discussion coach | **À compléter** — ne pas inventer |
