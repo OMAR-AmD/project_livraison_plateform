@@ -98,7 +98,7 @@ async function sealAtDoor(courier, id) {
 /** Removes a row behind the service's back: no tombstone, no key, just SQL. */
 function sqlDelete(id) {
   execSync(
-    `docker exec delivery_postgres_demo psql -U admin -d delivery_db -c "DELETE FROM deliveries WHERE id = '${id}'"`,
+    `docker exec delivery_postgres psql -U admin -d delivery_db -c "DELETE FROM deliveries WHERE id = '${id}'"`,
     { stdio: 'pipe' },
   );
 }
@@ -106,11 +106,11 @@ function sqlDelete(id) {
 /** Exact chain rows, so every step of the demo is auditable. */
 function dumpRows(label) {
   const out = execSync(
-    `docker exec delivery_postgres_demo psql -U admin -d delivery_db -t -c "SELECT left(id::text,8), seal_seq, left(prev_hash,8), left(proof_hash,8) FROM deliveries ORDER BY seal_seq"`,
+    `docker exec delivery_postgres psql -U admin -d delivery_db -t -c "SELECT left(id::text,8), seal_seq, left(prev_hash,8), left(proof_hash,8) FROM deliveries ORDER BY seal_seq"`,
     { encoding: 'utf8' },
   );
   const tombs = execSync(
-    `docker exec delivery_postgres_demo psql -U admin -d delivery_db -t -c "SELECT left(delivery_id::text,8), seal_seq FROM seal_tombstone ORDER BY seal_seq"`,
+    `docker exec delivery_postgres psql -U admin -d delivery_db -t -c "SELECT left(delivery_id::text,8), seal_seq FROM seal_tombstone ORDER BY seal_seq"`,
     { encoding: 'utf8' },
   );
   console.log(`   rows ${label}: deliveries[${out.trim().replace(/\s+/g, ' ')}] tombs[${tombs.trim().replace(/\s+/g, ' ')}]`);
@@ -129,6 +129,15 @@ async function main() {
   const list = couriers.content || couriers;
   const c1 = list.find((u) => u.email === 'courier1@swift.com');
 
+  // Baseline: the script runs on any database, including one that already
+  // holds seals. All counts below are relative to it — but the baseline
+  // itself must be green, or nothing measured after it means anything.
+  const base = (await api('/admin/deliveries/proof-chain', admin)).body;
+  console.log(`   baseline chain: ${JSON.stringify(base)}`);
+  if (!base?.ok) throw new Error('baseline chain is already broken; fix it before measuring');
+  const S0 = base.sealed;
+  const T0 = base.tombstones;
+
   // ============ 1+2: seal two, read the links ============
   console.log('\n-- sealing A then B --');
   const a = await readyDelivery(admin, courier1, c1.id, client1, 'A');
@@ -146,8 +155,8 @@ async function main() {
 
   let chain = (await api('/admin/deliveries/proof-chain', admin)).body;
   console.log('   chain:', JSON.stringify(chain));
-  check('two seals verify as a chain', chain?.ok === true && chain?.sealed === 2
-    && chain?.tombstones === 0, JSON.stringify(chain));
+  check('two seals verify as a chain', chain?.ok === true && chain?.sealed === S0 + 2
+    && chain?.tombstones === T0, JSON.stringify(chain));
 
   // ============ 3: concurrent seals line up ============
   console.log('\n-- sealing C and D concurrently --');
@@ -175,7 +184,7 @@ async function main() {
   chain = (await api('/admin/deliveries/proof-chain', admin)).body;
   console.log('   chain:', JSON.stringify(chain));
   check('concurrent seals form one line, not a fork',
-    chain?.ok === true && chain?.sealed === 4, JSON.stringify(chain));
+    chain?.ok === true && chain?.sealed === S0 + 4, JSON.stringify(chain));
 
   // ============ 4: API delete leaves a tombstone, chain stays green ============
   console.log('\n-- deleting B through the API --');
@@ -191,7 +200,7 @@ async function main() {
   chain = (await api('/admin/deliveries/proof-chain', admin)).body;
   console.log('   chain:', JSON.stringify(chain));
   check('the recorded deletion keeps the chain green',
-    chain?.ok === true && chain?.sealed === 4 && chain?.tombstones === 1,
+    chain?.ok === true && chain?.sealed === S0 + 4 && chain?.tombstones === T0 + 1,
     JSON.stringify(chain));
 
   // ============ 5: SQL delete of the middle row breaks at the successor ============
@@ -215,7 +224,7 @@ async function main() {
   chain = (await api('/admin/deliveries/proof-chain', admin)).body;
   console.log('   chain:', JSON.stringify(chain));
   check('a shorter chain still verifies: tail deletion is the known gap the head anchor will close',
-    chain?.ok === true && chain?.sealed === 2 && chain?.tombstones === 1,
+    chain?.ok === true && chain?.sealed === S0 + 2 && chain?.tombstones === T0 + 1,
     JSON.stringify(chain));
 
   console.log('\n' + '='.repeat(72));
