@@ -142,6 +142,8 @@ services:
       FIELD_COLLECTION_REQUIRE_CONSENT: "${FIELD_COLLECTION_REQUIRE_CONSENT:-true}"
       FIELD_COLLECTION_RETENTION_DAYS: "${FIELD_COLLECTION_RETENTION_DAYS:-90}"
       FIELD_COLLECTION_TARGET_RUNS: "${FIELD_COLLECTION_TARGET_RUNS:-150}"
+      # The container must not silently keep a localhost-only CORS allowlist.
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,https://swiftdeliver-frontend.onrender.com}"
       SPRING_PROFILES_ACTIVE: demo
     ports:
       # Published so a phone on the same network can reach the API during a
