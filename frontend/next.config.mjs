@@ -30,7 +30,11 @@ const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
-  { key: 'Referrer-Policy', value: 'no-referrer' },
+  // OSM's tile usage policy requires a Referer. strict-origin-when-cross-origin
+  // sends only the origin (not the path or query) to third-party tile servers,
+  // so the basemap works without leaking the page URL. no-referrer returned
+  // OSM's "Access blocked" image and silently broke every map.
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'geolocation=(self), camera=(self), microphone=()' },
 ];
 
