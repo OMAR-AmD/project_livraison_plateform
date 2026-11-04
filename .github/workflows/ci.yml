@@ -442,7 +442,11 @@ jobs:
       - name: The stack refuses to start without a signing key
         run: |
           set -euo pipefail
-          if JWT_SECRET_KEY= docker compose config --quiet 2>/dev/null; then
+          # DB_PASSWORD is supplied so the only missing required variable is
+          # the signing key: otherwise compose would fail for the wrong reason
+          # and this step would keep passing after the JWT gate regressed.
+          if JWT_SECRET_KEY= DB_PASSWORD=ci-placeholder-password-not-used \
+              docker compose config --quiet 2>/dev/null; then
             echo "docker compose accepted an empty JWT_SECRET_KEY."
             echo "That means the deployed platform would boot with no signing key."
             exit 1
@@ -452,6 +456,7 @@ jobs:
       - name: The stack config is valid with a key present
         env:
           JWT_SECRET_KEY: ci-placeholder-key-not-used-for-a-real-deployment
+          DB_PASSWORD: ci-placeholder-password-not-used
         run: docker compose config --quiet
 
       # render.yaml is how the platform reaches a public cloud, and it fails in a
