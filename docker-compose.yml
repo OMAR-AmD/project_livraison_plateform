@@ -149,6 +149,18 @@ services:
       # Next.js origin already proxies /api, so nothing needs the backend
       # exposed once a reverse proxy or platform routes is in front.
       - "8080:8080"
+    # The application writes only to stdout and /tmp; the jar and model are
+    # read-only inputs. Dropping all capabilities and forbidding new privileges
+    # keeps an RCE from gaining anything beyond the spring user.
+    # OR-Tools extracts and dlopen()s its JNI library from java.io.tmpdir, so
+    # /tmp must stay executable even though the root filesystem is read-only.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,size=256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # Docker Desktop resolves host.docker.internal by itself; on Linux this
     # gateway mapping is what makes the host reachable under that name.
     extra_hosts:
@@ -183,6 +195,16 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
+    # Next.js writes image-optimization cache entries under .next/cache; the
+    # rest of the standalone bundle is read-only. /tmp is needed by Node.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       # 127.0.0.1 rather than localhost: on the Alpine base, `localhost`
       # resolves to ::1 first, next-server binds IPv4 only, and BusyBox wget

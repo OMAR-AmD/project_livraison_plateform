@@ -6,6 +6,9 @@ server:
   # where the proxy is knocking. The default keeps a bare `mvn spring-boot:run`
   # on 8080 with nothing exported.
   port: ${PORT:8080}
+  # Render terminates TLS at its edge. Without this, Spring sees HTTP, so HSTS
+  # is never emitted and redirects/URLs are built with the wrong scheme.
+  forward-headers-strategy: framework
 
 spring:
   datasource:
@@ -39,11 +42,16 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      # Demo convenience, not a production migration strategy. Set
+      # JPA_DDL_AUTO=validate once Flyway/Liquibase owns the schema; production
+      # must not mutate its own schema at boot.
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    # SQL logging is a debugging aid. It leaks query text and parameter values
+    # into platform logs, so it is off by default and opt-in with JPA_SHOW_SQL.
+    show-sql: ${JPA_SHOW_SQL:false}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${JPA_FORMAT_SQL:false}
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   ai:
@@ -96,6 +104,11 @@ application:
       # For local development:  export JWT_SECRET_KEY=$(openssl rand -hex 32)
       secret-key: ${JWT_SECRET_KEY}
       expiration: ${JWT_EXPIRATION:86400000}
+    cors:
+      # Browser origins allowed to call the API directly. The frontend uses a
+      # same-origin Next.js proxy, so this is only for direct API clients.
+      # Never "*": the API authenticates with bearer tokens, not cookies.
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001,https://swiftdeliver-frontend.onrender.com}
     # Failed-sign-in limiter. Both counters are windows, in seconds, and both
     # reset on a successful sign-in (per account) or when the window passes.
     # The per-client limit is much looser than the per-account one because a
