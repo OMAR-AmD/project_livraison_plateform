@@ -4,6 +4,8 @@
 > But du Sprint 1 : sécuriser la remise, rendre la preuve de livraison vérifiable, puis préparer la collecte de données terrain.
 > Statut global : **Sprint 1 clôturé le 3 novembre 2026. #1 et #2 sont Done ; #5 n'est pas terminé (0/150) et est replanifié au Sprint 2.**
 > Ce fichier reste la référence locale ; le board GitHub doit refléter ce statut (voir la section « Décision de clôture »).
+>
+> **Règle de Done (2026-11-04) :** un ticket ne passe à `Done` qu'après **push sur `origin/main` + CI vert + critères vérifiés + preuve liée**. Voir `DEFINITION_OF_DONE.md`.
 
 ---
 
@@ -12,7 +14,7 @@
 - `[x]` fait et vérifié
 - `[ ]` à faire
 - `[~]` en cours
-- `Done` = code + test + preuve de commit
+- `Done` = code + tests + commit sur `origin/main` + CI vert + preuve liée
 - `In Progress` = travail commencé, critère d'acceptation non atteint
 - `Todo (Sprint 2)` = retiré du Sprint 1, replanifié au Sprint 2
 
